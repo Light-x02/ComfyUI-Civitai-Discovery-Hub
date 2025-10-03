@@ -25,16 +25,21 @@
 
 ## 🧩 Installation
 
-1. Go to your ComfyUI `custom_nodes` folder:
+### Method 1: Install via ComfyUI Manager
 
+2. Go to the **Custom Nodes** section in the interface.
+3. Search for **"ComfyUI-Civitai-Discovery-Hub"** and install it directly from the ComfyUI Manager.
+4. **Restart ComfyUI**  
+   Restart ComfyUI to load the node.
+
+### Method 2: Clone the Repository
+1. Open a terminal or command prompt.
+2. Run the following command to clone the repository:
    ```bash
-   cd /path/to/ComfyUI/custom_nodes
    git clone https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub.git
    ```
-
-2. **Restart** ComfyUI.
-
-3. Search for **“Civitai Discovery Hub”** in the palette and add the node to your graph.
+3. **Restart ComfyUI**  
+   Once the files are in place, restart ComfyUI to load the node.
 
 ---
 
