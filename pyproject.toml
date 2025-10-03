@@ -1,6 +1,6 @@
 [project]
 name = "civitai-discovery-hub"
-description = ""
+description = "This ComfyUI node lets you browse the Civitai gallery directly within the interface, featuring infinite scroll, advanced filters (including NSFW), and favorites management. It also allows you to retrieve prompts, metadata, and images/videos to seamlessly reuse them in your workflows."
 version = "1.0.0"
 license = {file = "LICENSE"} 
 # classifiers = [
@@ -29,7 +29,7 @@ Documentation = "https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub/wiki
 "Bug Tracker" = "https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub/issues"
 
 [tool.comfy]
-PublisherId = ""
+PublisherId = "lightx02"
 DisplayName = "ComfyUI-Civitai-Discovery-Hub"
 Icon = ""
 includes = [] 
