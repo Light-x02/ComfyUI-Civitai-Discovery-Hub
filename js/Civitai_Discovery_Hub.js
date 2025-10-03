@@ -6,14 +6,14 @@ import { api } from "/scripts/api.js";
     const DISPLAY_NAME = "🖼️ Civitai Discovery Hub";
 
     const USER_TAG_GROUPS = [
-        { label: "People", items: [{ name: "Woman", id: "5133" }, { name: "Man", id: "5232" }] },
-        { label: "Animals & Creatures", items: [{ name: "Animal", id: "111768" }, { name: "Cat", id: "5132" }, { name: "Dog", id: "2539" }, { name: "Dragon", id: "5499" }] },
-        { label: "Styles & Media", items: [{ name: "Photography", id: "5241" }, { name: "PhotoRealistic", id: "172" }, { name: "Modern art", id: "617" }, { name: "Anime", id: "4" }, { name: "Cartoon", id: "5186" }, { name: "Comics", id: "2397" }] },
-        { label: "Environments & Places", items: [{ name: "Outdoors", id: "111763" }, { name: "Landscape", id: "8363" }, { name: "City", id: "55" }, { name: "Architecture", id: "414" }, { name: "Astronomy", id: "111767" }] },
-        { label: "Clothing & Gear", items: [{ name: "Clothing", id: "5193" }, { name: "Latex Clothing", id: "111935" }, { name: "Armor", id: "5169" }, { name: "Costume", id: "2435" }] },
-        { label: "Vehicles & Transport", items: [{ name: "Transportation", id: "111757" }, { name: "Car", id: "111805" }, { name: "Sports Car", id: "111833" }] },
-        { label: "Genres & Characters", items: [{ name: "Game Character", id: "5211" }, { name: "Fantasy", id: "5207" }, { name: "Sci-Fi", id: "3060" }, { name: "Post Apocalyptic", id: "213" }, { name: "Robot", id: "6594" }] },
-        { label: "Other", items: [{ name: "Food", id: "3915" }] },
+        { label: "👤 People", items: [{ name: "👩 Woman", id: "5133" }, { name: "👨 Man", id: "5232" }] },
+        { label: "🐾 Animals & Creatures", items: [{ name: "🐾 Animal", id: "111768" }, { name: "🐱 Cat", id: "5132" }, { name: "🐶 Dog", id: "2539" }, { name: "🐉 Dragon", id: "5499" }] },
+        { label: "🎨 Styles & Media", items: [{ name: "📷 Photography", id: "5241" }, { name: "🖼️ PhotoRealistic", id: "172" }, { name: "🖌️ Modern art", id: "617" }, { name: "🎎 Anime", id: "4" }, { name: "🎭 Cartoon", id: "5186" }, { name: "📚 Comics", id: "2397" }] },
+        { label: "🏞️ Environments & Places", items: [{ name: "🌲 Outdoors", id: "111763" }, { name: "🌄 Landscape", id: "8363" }, { name: "🏙️ City", id: "55" }, { name: "🏛️ Architecture", id: "414" }, { name: "🌌 Astronomy", id: "111767" }] },
+        { label: "👗 Clothing & Gear", items: [{ name: "👕 Clothing", id: "5193" }, { name: "🧥 Latex Clothing", id: "111935" }, { name: "🛡️ Armor", id: "5169" }, { name: "🎭 Costume", id: "2435" }] },
+        { label: "🚗 Vehicles & Transport", items: [{ name: "🚉 Transportation", id: "111757" }, { name: "🚗 Car", id: "111805" }, { name: "🏎️ Sports Car", id: "111833" }] },
+        { label: "🎮 Genres & Characters", items: [{ name: "🎮 Game Character", id: "5211" }, { name: "🐲 Fantasy", id: "5207" }, { name: "👾 Sci-Fi", id: "3060" }, { name: "☣️ Post Apocalyptic", id: "213" }, { name: "🤖 Robot", id: "6594" }] },
+        { label: "🍔 Other", items: [{ name: "🍔 Food", id: "3915" }] },
     ];
 
     const qs = (o) =>
