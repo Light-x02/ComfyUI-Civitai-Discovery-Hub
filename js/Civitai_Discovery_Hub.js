@@ -137,6 +137,12 @@ import { api } from "/scripts/api.js";
 #${uid} .cg-status{ font-size:12px; opacity:.8 }
 #${uid} .cg-hidden{ display:none !important }
 #${uid} .cg-sentinel{ width:100%; height:1px }
+
+/* Display ON/OFF */
+#${uid} .cg-toggle-render.cg-render-on  { color:#22c55e; border-color:#22c55e66; }
+#${uid} .cg-toggle-render.cg-render-off { color:#ef4444; border-color:#ef444466; }
+#${uid} .cg-scroll.paused { display:none !important; }
+#${uid} .cg-foot.paused   { display:none !important; }
 </style>
 
 <div class="cg-root">
@@ -179,6 +185,7 @@ import { api } from "/scripts/api.js";
       <button class="cg-btn toggle cg-toggle-favonly">Favorites only</button>
 
       <button class="cg-btn cg-refresh">Refresh</button>
+      <button class="cg-btn cg-toggle-render cg-render-on">Display: ON</button>
     </div>
   </div>
 
@@ -219,6 +226,7 @@ import { api } from "/scripts/api.js";
                 const elBtnFavOnly = $(".cg-toggle-favonly");
                 const elLimitSel = $(".cg-limit");
                 const elSentinel = root.querySelector(".cg-sentinel");
+                const elBtnRender = $(".cg-toggle-render");
 
                 // state
                 let loading = false;
@@ -231,6 +239,12 @@ import { api } from "/scripts/api.js";
                 let lastKey = "";
                 let cursor = null;
                 let favOffset = 0;
+
+                // Display ON/OFF state & infra
+                let renderEnabled = true;
+                let _scrollHandlerBound = null;
+                let _ioSentinel = null;
+                let _ioVideo = null;
 
                 const NEAR_BOTTOM_PX = 900;
 
@@ -319,42 +333,59 @@ import { api } from "/scripts/api.js";
                     );
                 };
 
-                const ioVid = new IntersectionObserver(
-                    (entries) => {
-                        for (const e of entries) {
-                            const v = e.target;
-                            if (!v || v.tagName !== "VIDEO") continue;
+                // Observers factory (vid + sentinel)
+                const setupObservers = () => {
+                    // Video observer
+                    _ioVideo = new IntersectionObserver(
+                        (entries) => {
+                            if (!renderEnabled) return;
+                            for (const e of entries) {
+                                const v = e.target;
+                                if (!v || v.tagName !== "VIDEO") continue;
 
-                            if (e.isIntersecting) {
-                                if (!v.src && v.dataset.src) {
-                                    v.preload = "metadata";
-                                    v.src = v.dataset.src;
-                                    v.load();
+                                if (e.isIntersecting) {
+                                    if (!v.src && v.dataset.src) {
+                                        v.preload = "metadata";
+                                        v.src = v.dataset.src;
+                                        v.load();
 
-                                    const kickPreview = () => {
-                                        try {
-                                            const t = v.duration && isFinite(v.duration)
-                                                ? Math.min(0.1, Math.max(0.02, v.duration * 0.02))
-                                                : 0.1;
-                                            if (v.readyState < 2) return;
-                                            v.currentTime = t;
-                                        } catch { }
-                                    };
+                                        const kickPreview = () => {
+                                            try {
+                                                const t = v.duration && isFinite(v.duration)
+                                                    ? Math.min(0.1, Math.max(0.02, v.duration * 0.02))
+                                                    : 0.1;
+                                                if (v.readyState < 2) return;
+                                                v.currentTime = t;
+                                            } catch { }
+                                        };
 
-                                    v.addEventListener("loadedmetadata", kickPreview, { once: true });
-                                    setTimeout(() => {
-                                        if (v.readyState < 2) {
-                                            v.preload = "auto";
-                                            v.load();
-                                            setTimeout(kickPreview, 200);
-                                        }
-                                    }, 1200);
+                                        v.addEventListener("loadedmetadata", kickPreview, { once: true });
+                                        setTimeout(() => {
+                                            if (v.readyState < 2) {
+                                                v.preload = "auto";
+                                                v.load();
+                                                setTimeout(kickPreview, 200);
+                                            }
+                                        }, 1200);
+                                    }
                                 }
                             }
-                        }
-                    },
-                    { root: elScroll, rootMargin: "1200px" }
-                );
+                        },
+                        { root: elScroll, rootMargin: "1200px" }
+                    );
+
+                    // Sentinel observer
+                    _ioSentinel = new IntersectionObserver(
+                        (entries) => {
+                            if (!renderEnabled) return;
+                            for (const e of entries) {
+                                if (e.isIntersecting && !loading && hasMore) loadMore();
+                            }
+                        },
+                        { root: elScroll, rootMargin: "1200px" }
+                    );
+                    _ioSentinel.observe(elSentinel);
+                };
 
                 // card
                 const makeCard = (it) => {
@@ -379,7 +410,7 @@ import { api } from "/scripts/api.js";
                         v.addEventListener("seeked", freeze);
                         v.addEventListener("loadeddata", freeze, { once: true });
 
-                        ioVid.observe(v);
+                        _ioVideo?.observe(v);
                         d.appendChild(v);
                     } else {
                         const img = document.createElement("img");
@@ -429,11 +460,11 @@ import { api } from "/scripts/api.js";
                             if (data.status === "added") {
                                 favoritesMap[k] = it;
                                 setStar(true);
-                                if (favoritesOnly) await reload(); // affichage immédiat en mode favoris
+                                if (favoritesOnly) await reload();
                             } else if (data.status === "removed") {
                                 delete favoritesMap[k];
                                 setStar(false);
-                                if (favoritesOnly) await reload(); // disparition immédiate en mode favoris
+                                if (favoritesOnly) await reload();
                             }
                         } catch (err) {
                             console.error("Favorite toggle failed:", err);
@@ -499,7 +530,9 @@ import { api } from "/scripts/api.js";
                 // near-bottom
                 const nearBottom = () => (elScroll.scrollHeight - elScroll.scrollTop - elScroll.clientHeight) <= NEAR_BOTTOM_PX;
 
+                // === Guards with renderEnabled ===
                 const checkAndAutofill = async () => {
+                    if (!renderEnabled) return;
                     let safety = 6;
                     while (!loading && hasMore && nearBottom() && safety-- > 0) {
                         await loadMore();
@@ -507,7 +540,7 @@ import { api } from "/scripts/api.js";
                 };
 
                 const loadMoreServer = async () => {
-                    if (loading || !hasMore) return;
+                    if (!renderEnabled || loading || !hasMore) return;
                     loading = true;
                     setStatus("Loading…");
                     try {
@@ -548,11 +581,10 @@ import { api } from "/scripts/api.js";
                 };
 
                 const loadMoreFavorites = async () => {
-                    if (loading || !hasMore) return;
+                    if (!renderEnabled || loading || !hasMore) return;
                     loading = true;
                     setStatus("Loading favorites…");
                     try {
-                        // Si la liste locale est vide, on s'assure que la map est à jour
                         if (!favoritesArray.length) {
                             if (!Object.keys(favoritesMap).length) {
                                 favoritesMap = await getJSON("/civitai_gallery/get_all_favorites_data");
@@ -578,11 +610,13 @@ import { api } from "/scripts/api.js";
                 };
 
                 const loadMore = async () => {
+                    if (!renderEnabled) return;
                     if (favoritesOnly) return loadMoreFavorites();
                     return loadMoreServer();
                 };
 
                 const reload = async () => {
+                    if (!renderEnabled) return;
                     if (loading) return;
                     loading = true;
                     setStatus("Loading…");
@@ -590,7 +624,6 @@ import { api } from "/scripts/api.js";
                         const key = buildKey();
                         if (key !== lastKey) lastKey = key;
 
-                        // RESET COMPLET DES FAVORIS CACHÉS (fix du bug)
                         favoritesArray = [];
                         favOffset = 0;
 
@@ -598,7 +631,6 @@ import { api } from "/scripts/api.js";
                         cursor = null;
                         hasMore = true;
 
-                        // Recharge la map côté serveur, puis reconstruit la liste locale
                         await loadFavoritesMap();
                         favoritesArray = Object.values(favoritesMap || {});
 
@@ -635,22 +667,47 @@ import { api } from "/scripts/api.js";
                     await reload();
                 });
 
-                // IO sentinel + near-bottom autofill
-                const io = new IntersectionObserver(
-                    (entries) => {
-                        for (const e of entries) {
-                            if (e.isIntersecting && !loading && hasMore) loadMore();
-                        }
-                    },
-                    { root: elScroll, rootMargin: "1200px" }
-                );
-                io.observe(elSentinel);
-
-                const onScroll = () => {
-                    if (nearBottom() && !loading && hasMore) loadMore();
+                // Scroll listener (branché/débranché par setRenderState)
+                const bindScroll = () => {
+                    if (_scrollHandlerBound) return;
+                    _scrollHandlerBound = () => { if (nearBottom() && !loading && hasMore && renderEnabled) loadMore(); };
+                    elScroll.addEventListener("scroll", _scrollHandlerBound, { passive: true });
                 };
-                elScroll.addEventListener("scroll", onScroll, { passive: true });
+                const unbindScroll = () => {
+                    if (!_scrollHandlerBound) return;
+                    elScroll.removeEventListener("scroll", _scrollHandlerBound);
+                    _scrollHandlerBound = null;
+                };
 
+                // Display state handler
+                const setRenderState = (on) => {
+                    renderEnabled = !!on;
+
+                    elBtnRender.classList.toggle("cg-render-on", renderEnabled);
+                    elBtnRender.classList.toggle("cg-render-off", !renderEnabled);
+                    elBtnRender.textContent = renderEnabled ? "Display: ON" : "Display: OFF";
+
+                    elScroll.classList.toggle("paused", !renderEnabled);
+                    root.querySelector(".cg-foot")?.classList.toggle("paused", !renderEnabled);
+
+                    if (!renderEnabled) {
+                        // stop observers + scroll
+                        try { _ioSentinel?.disconnect(); } catch { }
+                        try { _ioVideo?.disconnect(); } catch { }
+                        unbindScroll();
+                        // pause any playing video
+                        elGrid.querySelectorAll("video").forEach(v => { try { v.pause(); } catch { } });
+                    } else {
+                        // rebuild observers + scroll & auto-reload
+                        setupObservers();
+                        bindScroll();
+                        reload();
+                    }
+                };
+
+                elBtnRender.addEventListener("click", () => setRenderState(!renderEnabled));
+
+                // Resize => recalc masonry & autofill
                 const ro = new ResizeObserver(() => {
                     const w = elScroll.clientWidth || root.clientWidth || 900;
                     const target = Math.max(240, Math.min(360, Math.floor(w / Math.ceil(w / 280))));
@@ -665,7 +722,11 @@ import { api } from "/scripts/api.js";
                     toggleBtn(elBtnFavOnly, favoritesOnly);
                     await loadFavoritesMap();
                     setStatus("");
-                    setTimeout(() => reload(), 10);
+
+                    // initial infra
+                    setupObservers();
+                    bindScroll();
+                    setRenderState(true); // ON par défaut
                 })();
 
                 return r;
