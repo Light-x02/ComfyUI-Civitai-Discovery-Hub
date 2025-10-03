@@ -1,3 +1,5 @@
+⭐ **Give a star, it shines and keeps us motivated! ✨**
+
 # 📜 ComfyUI-Civitai-Discovery-Hub
 
 [☕ Support on Ko-fi](https://ko-fi.com/light_x02)
