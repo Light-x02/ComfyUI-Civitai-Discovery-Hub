@@ -1,4 +1,6 @@
-﻿import { app } from "/scripts/app.js";
+// Developed by Light - x02
+// https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub
+import { app } from "/scripts/app.js";
 
 (function () {
     const EXT_NAME = "ClearLoraName.FuturisticTheme";
@@ -208,3 +210,4 @@
         },
     });
 })();
+
