@@ -123,8 +123,7 @@ By placing the **Clear LoRA Name** node after the Hub’s prompt outputs:
 - You remove external dependencies (`<lora:...>`).  
 - Your workflow becomes **portable, clean, and reproducible**.  
 
-## 🖥️ UI Features
-- **Neon-style panel**: consistent look with Civitai Discovery Hub.  
+## 🖥️ UI Features 
 - **On/Off toggle**: quickly enable/disable the cleaning process without deleting the node.  
 - **Compact and minimal**: fits smoothly into your workflow as a utility step.  
 
