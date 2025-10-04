@@ -98,6 +98,45 @@ Click on a card to select:
 
 ---
 
+# 🧹 Clear LoRA Name — Utility Node for ComfyUI
+
+The **Clear LoRA Name** node is a lightweight utility designed to work seamlessly with the **Civitai Discovery Hub** extension. Its purpose is to **clean prompts** by automatically removing any embedded **LoRA tags** of the form `<lora:Some_LoRA_Name:0.7>` or similar variations.
+
+![comfyui_civitai_gallery_001](assets/022907.png)
+
+## 🔧 How it works
+- **Inputs**:  
+  - `positive_prompt` (optional)  
+  - `negative_prompt` (optional)  
+- **Process**:  
+  - The node parses both prompts.  
+  - All `<lora:...>` tags are stripped out.  
+  - The remaining text is cleaned to remove extra spaces or artifacts.  
+- **Outputs**:  
+  - `positive_prompt` (cleaned)  
+  - `negative_prompt` (cleaned)  
+
+## 🚀 Why it’s useful with Civitai Discovery Hub
+When browsing images in **Civitai Discovery Hub**, many prompts include references to LoRAs that might **not be available locally**. Using these raw prompts in your workflow can trigger errors or produce unexpected results.  
+By placing the **Clear LoRA Name** node after the Hub’s prompt outputs:
+- You keep the descriptive part of the prompt intact.  
+- You remove external dependencies (`<lora:...>`).  
+- Your workflow becomes **portable, clean, and reproducible**.  
+
+## 🖥️ UI Features
+- **Neon-style panel**: consistent look with Civitai Discovery Hub.  
+- **On/Off toggle**: quickly enable/disable the cleaning process without deleting the node.  
+- **Compact and minimal**: fits smoothly into your workflow as a utility step.  
+
+## ✅ Example
+**Original prompt from Civitai Discovery Hub**:  
+`A cinematic portrait of a warrior <lora:FluxHeroXL:0.8> in a snowy landscape`
+
+**After Clear LoRA Name**:  
+`A cinematic portrait of a warrior in a snowy landscape`
+
+
+---
 ## ❓ FAQ
 
 **Q. I scroll to the bottom and nothing loads, what should I do?**\
