@@ -135,7 +135,7 @@ class CivitaiDiscoveryHubNode:
     RETURN_TYPES = ("STRING", "STRING", "IMAGE", "STRING",)
     RETURN_NAMES = ("positive_prompt", "negative_prompt", "image", "info",)
     FUNCTION = "get_selected_data"
-    CATEGORY = "📜Asset Gallery/Civitai"
+    CATEGORY = "💡Lightx02/Civitai"
 
     def get_selected_data(self, unique_id, civitai_gallery_unique_id_widget="", selection_data="{}"):
         try:
