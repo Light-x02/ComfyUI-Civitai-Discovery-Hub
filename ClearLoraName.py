@@ -1,18 +1,6 @@
 import re
 
 class ClearLoraName:
-    """
-    Nœud utilitaire pour nettoyer les prompts en supprimant les tags LoRA.
-
-    Entrées :
-      - enabled (BOOLEAN, requis) : active/désactive le nettoyage
-      - positive_prompt (STRING, optionnel)
-      - negative_prompt (STRING, optionnel)
-
-    Sorties :
-      - positive_prompt (STRING) nettoyé ou inchangé si disabled
-      - negative_prompt (STRING) nettoyé ou inchangé si disabled
-    """
 
     # Regex robuste: <lora: ... > (espaces optionnels, contenu libre jusqu'à '>')
     _LORA_TAG_RE = re.compile(r"<\s*lora\s*:[^>]*>", re.IGNORECASE)
@@ -83,4 +71,5 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ClearLoraName": "🧹 Clear LoRA Name",
 }
+
 
