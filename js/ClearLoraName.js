@@ -4,11 +4,24 @@
     const EXT_NAME = "ClearLoraName.FuturisticTheme";
     const TARGET_CLASSES = ["ClearLoraName"];
     const TARGET_TITLES = [/^\s*🧹?\s*Clear\s+LoRA\s+Name\s*$/i];
+
     const MIN_W = 420;
     const MIN_H = 220;
 
+    const lsKey = (node) => {
+        const name = node?.title || `id${node?.id || "0"}`;
+        const klass = node?.comfyClass || "ClearLoraName";
+        return `cln:size:${klass}:${name}`;
+    };
+
+    const clampSize = (arr) => {
+        if (!Array.isArray(arr) || arr.length < 2) return null;
+        return [Math.max(MIN_W, +arr[0] || MIN_W), Math.max(MIN_H, +arr[1] || MIN_H)];
+    };
+
     app.registerExtension({
         name: EXT_NAME,
+
         beforeRegisterNodeDef(nodeType, nodeData) {
             const comfyClass = (nodeType?.comfyClass || "").toString();
             const titleGuess = (nodeData?.name || nodeData?.title || nodeType?.title || "").toString();
@@ -35,12 +48,12 @@
                 node.flags.allow_resize = true;
                 node.resizable = true;
 
-                if (!Array.isArray(node.size) || node.size.length < 2) {
-                    node.size = [MIN_W, MIN_H];
-                } else {
-                    node.size[0] = Math.max(MIN_W, node.size[0] ?? MIN_W);
-                    node.size[1] = Math.max(MIN_H, node.size[1] ?? MIN_H);
-                }
+                let restored =
+                    clampSize(node.properties.__cln.saved_size) ||
+                    clampSize(JSON.parse(localStorage.getItem(lsKey(node)) || "null")) ||
+                    clampSize(node.size) ||
+                    [MIN_W, MIN_H];
+                node.size = restored;
 
                 if (!node.properties.__cln.dom_once) {
                     const uid = `cln-${Math.random().toString(36).slice(2, 9)}`;
@@ -128,12 +141,22 @@
                         return [width, height];
                     };
 
+                    const saveSize = () => {
+                        const sz = clampSize(node.size) || [MIN_W, MIN_H];
+                        node.properties.__cln.saved_size = sz; 
+                        try {
+                            localStorage.setItem(lsKey(node), JSON.stringify(sz)); 
+                        } catch { }
+                    };
+
                     const _onResize = node.onResize;
                     node.onResize = function (size) {
                         let s = _onResize ? _onResize.call(this, size) : size;
                         if (!Array.isArray(s) || s.length < 2) s = Array.isArray(size) ? size.slice() : [MIN_W, MIN_H];
                         s[0] = Math.max(MIN_W, s[0] ?? MIN_W);
                         s[1] = Math.max(MIN_H, s[1] ?? MIN_H);
+                        node.size = s;
+                        saveSize();
                         return s;
                     };
 
@@ -172,6 +195,9 @@
                     });
 
                     renderBtn();
+
+                    saveSize();
+
                     node.properties.__cln.dom_once = true;
 
                     return r;
