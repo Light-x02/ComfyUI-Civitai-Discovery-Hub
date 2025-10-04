@@ -1,11 +1,42 @@
 // Developed by Light - x02
 // https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub
+// Compat 1.28.x + Persist Display ON/OFF (localStorage + fallback dans properties)
+
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
 (function () {
     const EXT_NAME = "CivitaiDiscoveryHub.InfiniteScroll";
     const DISPLAY_NAME = "🖼️ Civitai Discovery Hub";
+    const TARGET_CLASS = "CivitaiDiscoveryHubNode";
+
+    function sanitizeProxyWidgets(props) {
+        if (!props || typeof props !== "object" || Array.isArray(props)) return { proxyWidgets: [] };
+        if ("proxyWidget" in props && !("proxyWidgets" in props)) {
+            props.proxyWidgets = props.proxyWidget;
+            delete props.proxyWidget;
+        }
+        if (!("proxyWidgets" in props)) {
+            props.proxyWidgets = [];
+            return props;
+        }
+        const v = props.proxyWidgets;
+        if (Array.isArray(v)) return props;
+        if (v == null) props.proxyWidgets = [];
+        else if (typeof v === "string") {
+            const s = v.trim();
+            if (!s) props.proxyWidgets = [];
+            else if (s.startsWith("[") && s.endsWith("]")) {
+                try {
+                    const arr = JSON.parse(s);
+                    props.proxyWidgets = Array.isArray(arr) ? arr : [s];
+                } catch {
+                    props.proxyWidgets = [s];
+                }
+            } else props.proxyWidgets = [s];
+        } else props.proxyWidgets = [];
+        return props;
+    }
 
     const USER_TAG_GROUPS = [
         { label: "👤 People", items: [{ name: "👩 Woman", id: "5133" }, { name: "👨 Man", id: "5232" }] },
@@ -34,21 +65,33 @@ import { api } from "/scripts/api.js";
 
     app.registerExtension({
         name: EXT_NAME,
+
         beforeRegisterNodeDef(nodeType, nodeData) {
-            const title = nodeData?.name || nodeData?.title || nodeType?.title || "";
-            const typeName = (nodeType?.comfyClass || nodeData?.name || "").toString();
-            const matchesTitle = /civitai/i.test(title) && /(gallery|discovery\s*hub)/i.test(title);
-            const matchesType = /(CivitaiDiscoveryHubNode|CivitaiGalleryNode)/.test(typeName);
-            if (!(matchesTitle || matchesType)) return;
+            const comfyClass = (nodeType?.comfyClass || nodeData?.name || "").toString();
+            if (comfyClass !== TARGET_CLASS) return;
+
+            const _configure = nodeType.prototype.configure;
+            nodeType.prototype.configure = function (o, ...rest) {
+                if (o && o.properties) o.properties = sanitizeProxyWidgets({ ...o.properties });
+                return _configure?.call(this, o, ...rest);
+            };
+
+            const _onSerialize = nodeType.prototype.onSerialize;
+            nodeType.prototype.onSerialize = function (o, ...rest) {
+                const out = _onSerialize?.call(this, o, ...rest) ?? o ?? {};
+                if (out && out.properties) sanitizeProxyWidgets(out.properties);
+                return out;
+            };
 
             const _onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 const r = _onNodeCreated?.apply(this, arguments);
                 const node = this;
-                node.properties = node.properties || {};
+
+                node.properties = sanitizeProxyWidgets(node.properties || {});
                 node.properties.__cg = node.properties.__cg || {};
 
-                // Thème
+                // Thème une seule fois
                 if (!node.properties.__cg.colored_once) {
                     node.color = "#000000";
                     node.bgcolor = "#0b0b0b";
@@ -58,13 +101,13 @@ import { api } from "/scripts/api.js";
                     node.setDirtyCanvas(true, true);
                 }
 
-                // Widget caché (data -> Python)
+                // Widget caché -> passage de la sélection au Python
                 const wSel = node.addWidget("text", "selection_data", node.properties.__cg.selection_data || "{}", () => { }, { multiline: true });
                 wSel.serializeValue = () => node.properties.__cg.selection_data || "{}";
                 wSel.draw = function () { };
                 wSel.computeSize = () => [0, -4];
 
-                // DOM
+                // ---------- UI ----------
                 const uid = `cg-${Math.random().toString(36).slice(2, 9)}`;
                 const root = document.createElement("div");
                 root.id = uid;
@@ -81,70 +124,41 @@ import { api } from "/scripts/api.js";
     radial-gradient(900px 300px at 120% -20%, rgba(106,92,255,.08), transparent 60%);
   border-radius:14px;
 }
-#${uid} .cg-header{
-  position:relative; padding:10px 12px; border-radius:14px;
-  background:linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
-  border:1px solid var(--cg-border); box-shadow: var(--cg-shadow);
-}
-#${uid} .cg-title{ display:flex; align-items:center; gap:10px; margin-bottom:8px; letter-spacing:.3px; font-weight:700; }
-#${uid} .cg-title .dot{ width:10px;height:10px;border-radius:50%; background: radial-gradient(closest-side, var(--cg-neon), transparent); box-shadow: 0 0 12px var(--cg-neon); }
-#${uid} .cg-sub{opacity:.7; font-size:12px}
-#${uid} .cg-controls{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; }
-#${uid} .cg-input,#${uid} .cg-select{
-  padding:8px 10px; border:1px solid var(--cg-border); background:var(--cg-surface); color:var(--node-text-color);
-  border-radius:10px; height:32px; backdrop-filter: blur(8px);
-}
-#${uid} .cg-select{appearance:none; background-image:
-  linear-gradient(45deg, transparent 50%, var(--cg-neon) 50%),
-  linear-gradient(135deg, var(--cg-neon) 50%, transparent 50%);
-  background-position: calc(100% - 16px) calc(50% + 3px), calc(100% - 12px) calc(50% + 3px);
-  background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; padding-right: 26px; }
-#${uid} .cg-btn{ padding:8px 12px; border:1px solid var(--cg-border);
-  background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); border-radius:10px; cursor:pointer; user-select:none;
-  position:relative; overflow:hidden; transition: .18s ease; box-shadow: var(--cg-shadow);
-}
-#${uid} .cg-btn:hover{ filter:brightness(1.08) }
-#${uid} .cg-btn.toggle.active{
-  box-shadow: 0 0 0 1px rgba(57,208,255,.35) inset, 0 0 0 2px rgba(106,92,255,.25) inset, var(--cg-shadow);
-  outline:2px solid var(--cg-neon); outline-offset:0;
-}
-#${uid} .cg-scroll{
-  flex:1; min-height:0; overflow:auto; border-radius:14px;
-  background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));
-  border:1px solid var(--cg-border); padding:10px; backdrop-filter: blur(4px); box-shadow: var(--cg-shadow);
-}
-#${uid} .cg-scroll::-webkit-scrollbar{ width:10px; height:10px }
-#${uid} .cg-scroll::-webkit-scrollbar-thumb{ background: linear-gradient(var(--cg-neon), var(--cg-neon2)); border-radius:10px }
-#${uid} .cg-masonry{ column-gap:12px; --colw:280px; column-width:var(--colw) }
-#${uid} .cg-card{
-  display:inline-block; width:100%; margin:0 0 12px; border:1px solid var(--cg-border); border-radius:14px; overflow:hidden;
-  background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); position:relative; break-inside:avoid; opacity:0; transform:translateY(6px);
-  transition:opacity .18s ease, transform .18s ease, box-shadow .2s ease; box-shadow: var(--cg-shadow);
-}
-#${uid} .cg-card.show{ opacity:1; transform:translateY(0) }
-#${uid} .cg-card:hover{ box-shadow: 0 0 24px rgba(57,208,255,.13), var(--cg-shadow) }
-#${uid} .cg-card.selected{ outline:2px solid var(--cg-neon); outline-offset:-2px; box-shadow: 0 0 28px rgba(57,208,255,.15), var(--cg-shadow) }
-#${uid} .cg-img,#${uid} .cg-vid{ width:100%; height:auto; display:block; background:#0e0f13 }
-#${uid} .cg-vid{ max-height:72vh }
-#${uid} .cg-meta{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px }
-#${uid} .cg-meta-left{ display:flex; align-items:center; gap:8px }
-#${uid} .cg-chip{ font-size:11px; background:var(--cg-chip-bg); border:1px solid var(--cg-border); padding:2px 8px; border-radius:999px }
-#${uid} .cg-open{ font-size:12px; text-decoration:none; border:1px solid var(--cg-border); padding:4px 8px; border-radius:8px; background:var(--cg-surface); color:var(--node-text-color); opacity:.95 }
-#${uid} .cg-open:hover{ opacity:1; filter:brightness(1.08) }
-#${uid} .cg-star{ border:none; background:transparent; font-size:20px; line-height:1; cursor:pointer; color:#8b8b8b; transition:.15s }
-#${uid} .cg-star:hover{ transform:scale(1.06) }
-#${uid} .cg-star.fav{ color:#ffd970; text-shadow:0 0 8px rgba(255,217,112,.35) }
-#${uid} .cg-foot{ display:flex; align-items:center; gap:10px; flex-shrink:0; padding:10px; border:1px solid var(--cg-border); border-radius:14px;
-  background:linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); box-shadow: var(--cg-shadow); }
-#${uid} .cg-status{ font-size:12px; opacity:.8 }
-#${uid} .cg-hidden{ display:none !important }
-#${uid} .cg-sentinel{ width:100%; height:1px }
-
-/* Display ON/OFF */
-#${uid} .cg-toggle-render.cg-render-on  { color:#22c55e; border-color:#22c55e66; }
-#${uid} .cg-toggle-render.cg-render-off { color:#ef4444; border-color:#ef444466; }
-#${uid} .cg-scroll.paused { display:none !important; }
-#${uid} .cg-foot.paused   { display:none !important; }
+#${uid} .cg-header{position:relative;padding:10px 12px;border-radius:14px;background:linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.02));border:1px solid var(--cg-border);box-shadow:var(--cg-shadow)}
+#${uid} .cg-title{display:flex;align-items:center;gap:10px;margin-bottom:8px;letter-spacing:.3px;font-weight:700}
+#${uid} .cg-title .dot{width:10px;height:10px;border-radius:50%;background:radial-gradient(closest-side, var(--cg-neon), transparent);box-shadow:0 0 12px var(--cg-neon)}
+#${uid} .cg-sub{opacity:.7;font-size:12px}
+#${uid} .cg-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+#${uid} .cg-input,#${uid} .cg-select{padding:8px 10px;border:1px solid var(--cg-border);background:var(--cg-surface);color:var(--node-text-color);border-radius:10px;height:32px;backdrop-filter:blur(8px)}
+#${uid} .cg-select{appearance:none;background-image:linear-gradient(45deg, transparent 50%, var(--cg-neon) 50%),linear-gradient(135deg, var(--cg-neon) 50%, transparent 50%);background-position:calc(100% - 16px) calc(50% + 3px), calc(100% - 12px) calc(50% + 3px);background-size:6px 6px, 6px 6px;background-repeat:no-repeat;padding-right:26px}
+#${uid} .cg-btn{padding:8px 12px;border:1px solid var(--cg-border);background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));border-radius:10px;cursor:pointer;user-select:none;position:relative;overflow:hidden;transition:.18s ease;box-shadow:var(--cg-shadow)}
+#${uid} .cg-btn:hover{filter:brightness(1.08)}
+#${uid} .cg-btn.toggle.active{box-shadow:0 0 0 1px rgba(57,208,255,.35) inset, 0 0 0 2px rgba(106,92,255,.25) inset, var(--cg-shadow);outline:2px solid var(--cg-neon);outline-offset:0}
+#${uid} .cg-scroll{flex:1;min-height:0;overflow:auto;border-radius:14px;background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));border:1px solid var(--cg-border);padding:10px;backdrop-filter:blur(4px);box-shadow:var(--cg-shadow)}
+#${uid} .cg-scroll::-webkit-scrollbar{width:10px;height:10px}
+#${uid} .cg-scroll::-webkit-scrollbar-thumb{background:linear-gradient(var(--cg-neon), var(--cg-neon2));border-radius:10px}
+#${uid} .cg-masonry{column-gap:12px;--colw:280px;column-width:var(--colw)}
+#${uid} .cg-card{display:inline-block;width:100%;margin:0 0 12px;border:1px solid var(--cg-border);border-radius:14px;overflow:hidden;background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));position:relative;break-inside:avoid;opacity:0;transform:translateY(6px);transition:opacity .18s ease, transform .18s ease, box-shadow .2s ease;box-shadow:var(--cg-shadow)}
+#${uid} .cg-card.show{opacity:1;transform:translateY(0)}
+#${uid} .cg-card:hover{box-shadow:0 0 24px rgba(57,208,255,.13), var(--cg-shadow)}
+#${uid} .cg-card.selected{outline:2px solid var(--cg-neon);outline-offset:-2px;box-shadow:0 0 28px rgba(57,208,255,.15), var(--cg-shadow)}
+#${uid} .cg-img,#${uid} .cg-vid{width:100%;height:auto;display:block;background:#0e0f13}
+#${uid} .cg-vid{max-height:72vh}
+#${uid} .cg-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px}
+#${uid} .cg-meta-left{display:flex;align-items:center;gap:8px}
+#${uid} .cg-chip{font-size:11px;background:var(--cg-chip-bg);border:1px solid var(--cg-border);padding:2px 8px;border-radius:999px}
+#${uid} .cg-open{font-size:12px;text-decoration:none;border:1px solid var(--cg-border);padding:4px 8px;border-radius:8px;background:var(--cg-surface);color:var(--node-text-color);opacity:.95}
+#${uid} .cg-open:hover{opacity:1;filter:brightness(1.08)}
+#${uid} .cg-star{border:none;background:transparent;font-size:20px;line-height:1;cursor:pointer;color:#8b8b8b;transition:.15s}
+#${uid} .cg-star:hover{transform:scale(1.06)}
+#${uid} .cg-star.fav{color:#ffd970;text-shadow:0 0 8px rgba(255,217,112,.35)}
+#${uid} .cg-foot{display:flex;align-items:center;gap:10px;flex-shrink:0;padding:10px;border:1px solid var(--cg-border);border-radius:14px;background:linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.02));box-shadow:var(--cg-shadow)}
+#${uid} .cg-status{font-size:12px;opacity:.8}
+#${uid} .cg-sentinel{width:100%;height:1px}
+#${uid} .cg-toggle-render.cg-render-on{color:#22c55e;border-color:#22c55e66}
+#${uid} .cg-toggle-render.cg-render-off{color:#ef4444;border-color:#ef444466}
+#${uid} .cg-scroll.paused{display:none !important}
+#${uid} .cg-foot.paused{display:none !important}
 </style>
 
 <div class="cg-root">
@@ -211,7 +225,6 @@ import { api } from "/scripts/api.js";
                     return size;
                 };
 
-                // refs
                 const $ = (s) => root.querySelector(s);
                 const elNSFW = $(".cg-nsfw");
                 const elSort = $(".cg-sort");
@@ -230,7 +243,6 @@ import { api } from "/scripts/api.js";
                 const elSentinel = root.querySelector(".cg-sentinel");
                 const elBtnRender = $(".cg-toggle-render");
 
-                // state
                 let loading = false;
                 let hasMore = true;
                 let favoritesOnly = false;
@@ -242,15 +254,14 @@ import { api } from "/scripts/api.js";
                 let cursor = null;
                 let favOffset = 0;
 
-                // Display ON/OFF state & infra
                 let renderEnabled = true;
                 let _scrollHandlerBound = null;
                 let _ioSentinel = null;
                 let _ioVideo = null;
 
-                const NEAR_BOTTOM_PX = 900;
+                // Clé locale persistante stable : par route + comfyClass + node.id
+                const LS_RENDER_KEY = `CDH:display:${location.pathname}:${TARGET_CLASS}:${node.id}`;
 
-                // Tags
                 (function populateTags() {
                     const keep = elTags.value || "";
                     elTags.replaceChildren(new Option("None", ""));
@@ -268,7 +279,6 @@ import { api } from "/scripts/api.js";
                     catch { favoritesMap = {}; }
                 };
 
-                // helpers
                 const getItemNsfw = (it) => (typeof it?.nsfwLevel === "string" ? it.nsfwLevel : (it?.nsfw ? "X" : "None"));
                 const isVideo = (it) => {
                     const u = (it?.url || "").toLowerCase();
@@ -300,7 +310,6 @@ import { api } from "/scripts/api.js";
                         `B${batchSize()}`,
                     ].join("|");
 
-                // URL serveur (cursor)
                 const makeUrlStream = (cur) => {
                     const params = {
                         min_batch: batchSize(),
@@ -318,7 +327,6 @@ import { api } from "/scripts/api.js";
                     return `/civitai_gallery/images_stream?${qs(params)}`;
                 };
 
-                // chips
                 const chip = (t) => {
                     const s = document.createElement("span");
                     s.className = "cg-chip";
@@ -326,7 +334,6 @@ import { api } from "/scripts/api.js";
                     return s;
                 };
 
-                // ---------- Lazy <video> + poster + first-frame ----------
                 const posterFromItem = (it) => {
                     const m = it?.meta || {};
                     return (
@@ -335,22 +342,18 @@ import { api } from "/scripts/api.js";
                     );
                 };
 
-                // Observers factory (vid + sentinel)
                 const setupObservers = () => {
-                    // Video observer
                     _ioVideo = new IntersectionObserver(
                         (entries) => {
                             if (!renderEnabled) return;
                             for (const e of entries) {
                                 const v = e.target;
                                 if (!v || v.tagName !== "VIDEO") continue;
-
                                 if (e.isIntersecting) {
                                     if (!v.src && v.dataset.src) {
                                         v.preload = "metadata";
                                         v.src = v.dataset.src;
                                         v.load();
-
                                         const kickPreview = () => {
                                             try {
                                                 const t = v.duration && isFinite(v.duration)
@@ -360,7 +363,6 @@ import { api } from "/scripts/api.js";
                                                 v.currentTime = t;
                                             } catch { }
                                         };
-
                                         v.addEventListener("loadedmetadata", kickPreview, { once: true });
                                         setTimeout(() => {
                                             if (v.readyState < 2) {
@@ -376,7 +378,6 @@ import { api } from "/scripts/api.js";
                         { root: elScroll, rootMargin: "1200px" }
                     );
 
-                    // Sentinel observer
                     _ioSentinel = new IntersectionObserver(
                         (entries) => {
                             if (!renderEnabled) return;
@@ -389,7 +390,6 @@ import { api } from "/scripts/api.js";
                     _ioSentinel.observe(elSentinel);
                 };
 
-                // card
                 const makeCard = (it) => {
                     const d = document.createElement("div");
                     d.className = "cg-card";
@@ -402,16 +402,12 @@ import { api } from "/scripts/api.js";
                         v.muted = true;
                         v.playsInline = true;
                         v.preload = "none";
-
                         const poster = posterFromItem(it);
                         if (poster) v.poster = poster;
-
                         v.dataset.src = it.url || it?.meta?.videoUrl || it?.meta?.mp4Url || "";
-
                         const freeze = () => { try { v.pause(); } catch { } };
                         v.addEventListener("seeked", freeze);
                         v.addEventListener("loadeddata", freeze, { once: true });
-
                         _ioVideo?.observe(v);
                         d.appendChild(v);
                     } else {
@@ -489,7 +485,6 @@ import { api } from "/scripts/api.js";
                     return d;
                 };
 
-                // render
                 const appendGrid = (items) => {
                     const seen = new Set([...elGrid.querySelectorAll(".cg-card")].map((c) => c.dataset.selkey));
                     const nodes = [];
@@ -519,20 +514,15 @@ import { api } from "/scripts/api.js";
                 };
 
                 const setStatus = (msg) => (elStatus.textContent = msg || "");
-
                 const matchesVideoMode = (it) => (videosOnly ? isVideo(it) : !isVideo(it));
-
                 const serverFilteredOut = (it) => {
                     if (videosOnly && !isVideo(it)) return true;
                     if (!videosOnly && isVideo(it)) return true;
                     if (hideNoPrompt && !hasPositivePrompt(it)) return true;
                     return false;
                 };
+                const nearBottom = () => (elScroll.scrollHeight - elScroll.scrollTop - elScroll.clientHeight) <= 900;
 
-                // near-bottom
-                const nearBottom = () => (elScroll.scrollHeight - elScroll.scrollTop - elScroll.clientHeight) <= NEAR_BOTTOM_PX;
-
-                // === Guards with renderEnabled ===
                 const checkAndAutofill = async () => {
                     if (!renderEnabled) return;
                     let safety = 6;
@@ -553,13 +543,9 @@ import { api } from "/scripts/api.js";
                         items = items.filter(matchesVideoMode);
                         appendGrid(items);
 
-                        cursor =
-                            data?.metadata?.nextCursor ??
-                            data?.metadata?.cursor ??
-                            data?.metadata?.next ??
-                            null;
-
+                        cursor = data?.metadata?.nextCursor ?? data?.metadata?.cursor ?? data?.metadata?.next ?? null;
                         hasMore = !!cursor && items.length > 0;
+
                         setStatus(
                             hasMore
                                 ? `Loaded ${items.length} • more available (≈${data?.metadata?.elapsedMs ?? "?"}ms)`
@@ -669,7 +655,6 @@ import { api } from "/scripts/api.js";
                     await reload();
                 });
 
-                // Scroll listener (branché/débranché par setRenderState)
                 const bindScroll = () => {
                     if (_scrollHandlerBound) return;
                     _scrollHandlerBound = () => { if (nearBottom() && !loading && hasMore && renderEnabled) loadMore(); };
@@ -681,9 +666,12 @@ import { api } from "/scripts/api.js";
                     _scrollHandlerBound = null;
                 };
 
-                // Display state handler
                 const setRenderState = (on) => {
                     renderEnabled = !!on;
+
+                    // Persistance (double : localStorage + properties.__cg)
+                    try { localStorage.setItem(LS_RENDER_KEY, renderEnabled ? "1" : "0"); } catch { }
+                    try { node.properties.__cg.display_on = renderEnabled; } catch { }
 
                     elBtnRender.classList.toggle("cg-render-on", renderEnabled);
                     elBtnRender.classList.toggle("cg-render-off", !renderEnabled);
@@ -693,14 +681,16 @@ import { api } from "/scripts/api.js";
                     root.querySelector(".cg-foot")?.classList.toggle("paused", !renderEnabled);
 
                     if (!renderEnabled) {
-                        // stop observers + scroll
                         try { _ioSentinel?.disconnect(); } catch { }
                         try { _ioVideo?.disconnect(); } catch { }
                         unbindScroll();
-                        // pause any playing video
                         elGrid.querySelectorAll("video").forEach(v => { try { v.pause(); } catch { } });
+                        elGrid.replaceChildren(); // vider la grille quand OFF
+                        loading = false;
+                        hasMore = true;
+                        cursor = null;
+                        setStatus("");
                     } else {
-                        // rebuild observers + scroll & auto-reload
                         setupObservers();
                         bindScroll();
                         reload();
@@ -709,7 +699,6 @@ import { api } from "/scripts/api.js";
 
                 elBtnRender.addEventListener("click", () => setRenderState(!renderEnabled));
 
-                // Resize => recalc masonry & autofill
                 const ro = new ResizeObserver(() => {
                     const w = elScroll.clientWidth || root.clientWidth || 900;
                     const target = Math.max(240, Math.min(360, Math.floor(w / Math.ceil(w / 280))));
@@ -722,13 +711,15 @@ import { api } from "/scripts/api.js";
                     toggleBtn(elBtnVideo, videosOnly);
                     toggleBtn(elBtnNoPrompt, hideNoPrompt);
                     toggleBtn(elBtnFavOnly, favoritesOnly);
-                    await loadFavoritesMap();
                     setStatus("");
 
-                    // initial infra
-                    setupObservers();
-                    bindScroll();
-                    setRenderState(true); // ON par défaut
+                    // Lecture de l'état : 1) localStorage 2) fallback properties.__cg.display_on 3) défaut true
+                    let saved = null;
+                    try { saved = localStorage.getItem(LS_RENDER_KEY); } catch { }
+                    const propVal = typeof node.properties?.__cg?.display_on === "boolean" ? node.properties.__cg.display_on : null;
+                    const initOn = saved == null ? (propVal == null ? true : propVal) : saved === "1";
+
+                    setRenderState(initOn);
                 })();
 
                 return r;
@@ -736,5 +727,3 @@ import { api } from "/scripts/api.js";
         },
     });
 })();
-
-
