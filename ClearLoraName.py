@@ -1,8 +1,3 @@
-﻿# clear_lora_name.py
-# ComfyUI node: 🧹 Clear LoRA Name
-# Supprime toutes les occurrences de tags <lora:...> dans les prompts.
-# Exemple: "<lora:aidmaFLUXPro1.1-FLUX-v0.3:0.55>" sera retiré du texte.
-
 import re
 
 class ClearLoraName:
@@ -88,3 +83,4 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ClearLoraName": "🧹 Clear LoRA Name",
 }
+
