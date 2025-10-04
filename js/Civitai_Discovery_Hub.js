@@ -1,5 +1,5 @@
-# Developed by Light-x02
-# https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub
+// Developed by Light - x02
+// https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
@@ -736,4 +736,5 @@ import { api } from "/scripts/api.js";
         },
     });
 })();
+
 
