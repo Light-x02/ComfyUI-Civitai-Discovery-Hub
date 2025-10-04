@@ -1,3 +1,6 @@
+# Developed by Light-x02
+# https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub
+
 import server
 from aiohttp import web
 import aiohttp
@@ -463,4 +466,5 @@ async def get_video_for_workflow(request):
 # NODE REGISTRATION
 # ─────────────────────────────────────────────────────────────────────────────
 NODE_CLASS_MAPPINGS = {"CivitaiDiscoveryHubNode": CivitaiDiscoveryHubNode}
+
 NODE_DISPLAY_NAME_MAPPINGS = {"CivitaiDiscoveryHubNode": "🖼️ Civitai Discovery Hub"}
