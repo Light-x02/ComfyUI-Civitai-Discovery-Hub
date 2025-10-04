@@ -1,3 +1,5 @@
+# Developed by Light-x02
+# https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub
 import re
 
 class ClearLoraName:
@@ -71,5 +73,6 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ClearLoraName": "🧹 Clear LoRA Name",
 }
+
 
 
