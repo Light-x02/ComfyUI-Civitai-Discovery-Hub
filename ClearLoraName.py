@@ -36,7 +36,7 @@ class ClearLoraName:
     RETURN_TYPES = ("STRING", "STRING")
     RETURN_NAMES = ("positive_prompt", "negative_prompt")
     FUNCTION = "clear"
-    CATEGORY = "💡Lightx02/Utils"
+    CATEGORY = "💡Lightx02/utilities"
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -73,6 +73,7 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ClearLoraName": "🧹 Clear LoRA Name",
 }
+
 
 
 
