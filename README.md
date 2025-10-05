@@ -2,6 +2,10 @@
 
 # 📜 ComfyUI-Civitai-Discovery-Hub
 
+![ComfyUI](https://img.shields.io/badge/ComfyUI-custom%20nodes-5a67d8)
+![License: MIT](https://img.shields.io/badge/License-MIT-green)
+![Status](https://img.shields.io/badge/status-active-brightgreen)
+
 [☕ Support on Ko-fi](https://ko-fi.com/light_x02)
 
 > Browse the **Civitai** gallery directly inside **ComfyUI**: enjoy infinite scrolling, advanced filters (including **NSFW**), favorites management, **videos only** mode, and direct integration of prompts, metadata, and images/videos into your workflows.
