@@ -1,5 +1,7 @@
-// Developed by Light - x02
+// Developed by Light-x02
 // https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub
+
+// ----- SECTION: Imports -----
 import { app } from "/scripts/app.js";
 
 (function () {
@@ -25,8 +27,9 @@ import { app } from "/scripts/app.js";
         name: EXT_NAME,
 
         beforeRegisterNodeDef(nodeType, nodeData) {
-            const comfyClass = (nodeType?.comfyClass || "").toString();
+            const comfyClass = (nodeType?.comfyClass || nodeData?.name || "").toString();
             const titleGuess = (nodeData?.name || nodeData?.title || nodeType?.title || "").toString();
+
             if (!(TARGET_CLASSES.includes(comfyClass) || TARGET_TITLES.some((re) => re.test(titleGuess)))) return;
 
             const _onNodeCreated = nodeType.prototype.onNodeCreated;
@@ -61,6 +64,7 @@ import { app } from "/scripts/app.js";
                     const uid = `cln-${Math.random().toString(36).slice(2, 9)}`;
                     const root = document.createElement("div");
                     root.id = uid;
+
                     root.innerHTML = `
 <style>
 #${uid}{
@@ -110,6 +114,7 @@ import { app } from "/scripts/app.js";
 #${uid} .cln-toggle.on  { color:#22c55e; border-color:#22c55e66; }
 #${uid} .cln-toggle.off { color:#ef4444; border-color:#ef444466; }
 </style>
+
 <div class="cln-wrap">
   <div class="cln-head">
     <span class="dot"></span>
@@ -124,7 +129,7 @@ import { app } from "/scripts/app.js";
     </div>
   </div>
 </div>
-          `;
+                    `;
 
                     const domw = node.addDOMWidget("clear_lora_name_ui", "div", root, {});
                     domw.computeSize = function (w) {
@@ -145,9 +150,9 @@ import { app } from "/scripts/app.js";
 
                     const saveSize = () => {
                         const sz = clampSize(node.size) || [MIN_W, MIN_H];
-                        node.properties.__cln.saved_size = sz; 
+                        node.properties.__cln.saved_size = sz;
                         try {
-                            localStorage.setItem(lsKey(node), JSON.stringify(sz)); 
+                            localStorage.setItem(lsKey(node), JSON.stringify(sz));
                         } catch { }
                     };
 
@@ -168,11 +173,12 @@ import { app } from "/scripts/app.js";
                         const w = node.widgets?.find((ww) => ww.name === "enabled");
                         if (!w) return null;
                         w.draw = function () { };
-                        w.computeSize = function () { return [0, -6]; };
+                        w.computeSize = function () { return [0, 0]; };
                         w.serializeValue = function () { return this.value; };
                         node.setDirtyCanvas(true, true);
                         return w;
                     };
+
                     let wEnabled = hideEnabledWidget();
 
                     const refreshEnabledRef = () => {
@@ -197,12 +203,9 @@ import { app } from "/scripts/app.js";
                     });
 
                     renderBtn();
-
                     saveSize();
 
                     node.properties.__cln.dom_once = true;
-
-                    return r;
                 }
 
                 return r;
@@ -210,4 +213,3 @@ import { app } from "/scripts/app.js";
         },
     });
 })();
-
