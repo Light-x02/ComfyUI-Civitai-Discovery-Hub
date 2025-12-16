@@ -1,5 +1,22 @@
 ⭐ **Give a star, it shines and keeps us motivated! ✨**
 
+[☕ Support on Ko-fi](https://ko-fi.com/light_x02)
+
+# 📜 ComfyUI-Civitai-Discovery-Hub
+
+![ComfyUI](https://img.shields.io/badge/ComfyUI-custom%20nodes-5a67d8)
+![License: MIT](https://img.shields.io/badge/License-MIT-green)
+![Status](https://img.shields.io/badge/status-active-brightgreen)
+
+> Browse the **Civitai** gallery directly inside **ComfyUI**: enjoy infinite scrolling, advanced filters (including **NSFW**), favorites management, **videos only** mode, and direct integration of prompts, metadata, and images/videos into your workflows.
+
+- **GitHub**: [https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub](https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub)
+- **Node name in ComfyUI**: **Civitai Discovery Hub**
+
+![comfyui_civitai_gallery_001](assets/062107.png)
+
+---
+
 ## Changelog (Improvements + Bug Fixes)
 
 ### 2025-12-16 — Major Update (V3 + UI + Stability)
@@ -16,22 +33,6 @@
 - Fixed a related issue: when returning to the node after moving around the workflow, it could **append already-loaded images again**, which could eventually slow down ComfyUI.
 
 ✅ The gallery now stays **exactly** at the same position as long as you don’t scroll, and it no longer duplicates content when you move around the workflow.
-
-
-# 📜 ComfyUI-Civitai-Discovery-Hub
-
-![ComfyUI](https://img.shields.io/badge/ComfyUI-custom%20nodes-5a67d8)
-![License: MIT](https://img.shields.io/badge/License-MIT-green)
-![Status](https://img.shields.io/badge/status-active-brightgreen)
-
-[☕ Support on Ko-fi](https://ko-fi.com/light_x02)
-
-> Browse the **Civitai** gallery directly inside **ComfyUI**: enjoy infinite scrolling, advanced filters (including **NSFW**), favorites management, **videos only** mode, and direct integration of prompts, metadata, and images/videos into your workflows.
-
-- **GitHub**: [https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub](https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub)
-- **Node name in ComfyUI**: **Civitai Discovery Hub**
-
-![comfyui_civitai_gallery_001](assets/062107.png)
 
 ---
 
