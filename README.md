@@ -1,5 +1,23 @@
 ⭐ **Give a star, it shines and keeps us motivated! ✨**
 
+## Changelog (Improvements + Bug Fixes)
+
+### 2025-12-16 — Major Update (V3 + UI + Stability)
+
+#### ✅ V3 Migration (code fully rewritten)
+- Migrated the **🖼️ Civitai Discovery Hub** node to **V3**.
+- For this migration, **all code was rewritten** (Python + JavaScript) to be cleaner, V3-compatible, and more robust.
+
+#### 🔧 Universal Loader (V3)
+- The `__init__.py` was designed as a **universal V3 loader**: it automatically detects **all Python files** in the folder and loads them, without needing manual imports.
+
+#### 🚀 Stability & Performance
+- Fixed a bug where the gallery could shift / “move by itself”: if you scrolled down, then panned the workflow view and came back to the node, the list would unexpectedly re-align.
+- Fixed a related issue: when returning to the node after moving around the workflow, it could **append already-loaded images again**, which could eventually slow down ComfyUI.
+
+✅ The gallery now stays **exactly** at the same position as long as you don’t scroll, and it no longer duplicates content when you move around the workflow.
+
+
 # 📜 ComfyUI-Civitai-Discovery-Hub
 
 ![ComfyUI](https://img.shields.io/badge/ComfyUI-custom%20nodes-5a67d8)
