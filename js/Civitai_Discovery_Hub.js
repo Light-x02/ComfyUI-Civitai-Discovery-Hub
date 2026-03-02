@@ -75,6 +75,50 @@ const USER_TAG_GROUPS = [
   { label: "🍔 Other", items: [{ name: "🍔 Food", id: "3915" }] },
 ];
 
+/**
+ * @typedef {Object} CivitaiImageItem
+ * @property {number} id
+ * @property {string} url
+ * @property {string} hash
+ * @property {number} width
+ * @property {number} height
+ * @property {string} nsfwLevel
+ * @property {string} type
+ * @property {boolean} nsfw
+ * @property {number} browsingLevel
+ * @property {string} createdAt
+ * @property {number} postId
+ * @property {Object} stats
+ * @property {number} stats.cryCount
+ * @property {number} stats.laughCount
+ * @property {number} stats.likeCount
+ * @property {number} stats.dislikeCount
+ * @property {number} stats.heartCount
+ * @property {number} stats.commentCount
+ * @property {Object} meta
+ * @property {string} [meta.Size]
+ * @property {boolean} [meta.nsfw]
+ * @property {number} [meta.seed]
+ * @property {boolean} [meta.draft]
+ * @property {number} [meta.steps]
+ * @property {number} [meta.width]
+ * @property {number} [meta.height]
+ * @property {string} [meta.prompt]
+ * @property {string} [meta.sampler]
+ * @property {number} [meta.cfgScale]
+ * @property {number} [meta.clipSkip]
+ * @property {string} [meta.fluxMode]
+ * @property {number} [meta.quantity]
+ * @property {string} [meta.workflow]
+ * @property {string} [meta.baseModel]
+ * @property {Array} [meta.resources]
+ * @property {string} [meta.Created Date]
+ * @property {Array} [meta.civitaiResources]
+ * @property {string} username
+ * @property {string} baseModel
+ * @property {Array<number>} modelVersionIds
+ */
+
 export const Models = [
   "AuraFlow",
   "Chroma",
@@ -374,11 +418,13 @@ function ensureHiddenSelectionWidget(node) {
 }
 #${uid} .cg-scroll::-webkit-scrollbar{width:10px;height:10px}
 #${uid} .cg-scroll::-webkit-scrollbar-thumb{background:linear-gradient(var(--cg-neon), var(--cg-neon2));border-radius:10px}
-#${uid} .cg-masonry{column-gap:12px;--colw:280px;column-width:var(--colw)}
+#${uid} .cg-masonry{column-gap:3px;--colw:280px;column-width:var(--colw)}
+#${uid} .cg-view-masonry .cg-masonry{display:flex;flex-direction:row;align-items:flex-start;gap:3px;column-width:auto;column-gap:0}
+#${uid} .cg-masonry-col{display:flex;flex-direction:column;gap:0;flex:1;min-width:0}
 #${uid} .cg-view-grid .cg-masonry{column-width:auto;column-gap:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 #${uid} .cg-view-list .cg-masonry{column-width:auto;column-gap:0;display:flex;flex-direction:column;gap:12px}
 #${uid} .cg-card{
-  display:inline-block;width:100%;margin:0 0 12px;border:1px solid var(--cg-border);border-radius:14px;overflow:hidden;
+  display:inline-block;width:100%;margin:0 0 3px;border:1px solid var(--cg-border);border-radius:14px;overflow:hidden;
   background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));position:relative;break-inside:avoid;opacity:0;transform:translateY(6px);
   transition:opacity .18s ease, transform .18s ease, box-shadow .2s ease;box-shadow:var(--cg-shadow);
   overflow-anchor:none;
@@ -457,6 +503,7 @@ function ensureHiddenSelectionWidget(node) {
 
       <button class="cg-btn toggle cg-toggle-video">Videos only</button>
       <button class="cg-btn toggle cg-toggle-noprompt">Hide no-prompt</button>
+      <button class="cg-btn toggle cg-toggle-unique">Unique</button>
       <button class="cg-btn toggle cg-toggle-favonly">Favorites only</button>
 
       <label>View</label>
@@ -510,6 +557,7 @@ function ensureHiddenSelectionWidget(node) {
 
         const elBtnVideo = $(".cg-toggle-video");
         const elBtnNoPrompt = $(".cg-toggle-noprompt");
+        const elBtnUnique = $(".cg-toggle-unique");
         const elBtnFavOnly = $(".cg-toggle-favonly");
         const elLimitSel = $(".cg-limit");
         const elBtnRender = $(".cg-toggle-render");
@@ -519,6 +567,8 @@ function ensureHiddenSelectionWidget(node) {
         let favoritesOnly = false;
         let videosOnly = false;
         let hideNoPrompt = false;
+        let uniqueOnly = false;
+        let seenPrompts = new Set();
 
         let favoritesMap = {};
         let favoritesArray = [];
@@ -622,6 +672,7 @@ function ensureHiddenSelectionWidget(node) {
             setTimeout(() => {
               if (elScroll && !userTouchedThisView) elScroll.scrollTop = v;
               restoringScroll = false;
+              if (nearBottom() && hasMore) loadMore();
             }, 60);
           });
         };
@@ -685,6 +736,8 @@ function ensureHiddenSelectionWidget(node) {
           videosOnly = savedFilters.videosOnly;
         if (typeof savedFilters.hideNoPrompt === "boolean")
           hideNoPrompt = savedFilters.hideNoPrompt;
+        if (typeof savedFilters.uniqueOnly === "boolean")
+          uniqueOnly = savedFilters.uniqueOnly;
         if (typeof savedFilters.favoritesOnly === "boolean")
           favoritesOnly = savedFilters.favoritesOnly;
 
@@ -730,6 +783,7 @@ function ensureHiddenSelectionWidget(node) {
             limit: elLimitSel.value,
             videosOnly,
             hideNoPrompt,
+            uniqueOnly,
             favoritesOnly,
             baseModels: [...selectedBaseModels],
           };
@@ -858,49 +912,18 @@ function ensureHiddenSelectionWidget(node) {
             limit: elLimitSel.value,
             videosOnly,
             hideNoPrompt,
+            uniqueOnly,
             favoritesOnly,
             baseModels: [...selectedBaseModels].sort(),
           });
 
         const saveCacheState = () => {
-          const payload = {
-            items: cachedItems.slice(-MAX_CACHE_ITEMS),
-            cursor,
-            hasMore,
-            favoritesOnly,
-            favOffset,
-            filterKey: buildFilterKey(),
-          };
-          cg.cached_state = payload;
-          try {
-            localStorage.setItem(LS_CACHE_KEY, JSON.stringify(payload));
-          } catch {}
+          // Cache disabled per user request
         };
 
         const restoreCacheState = () => {
-          let s = cg.cached_state;
-          if (!s || !Array.isArray(s.items)) {
-            try {
-              const raw = localStorage.getItem(LS_CACHE_KEY);
-              s = raw ? JSON.parse(raw) : null;
-            } catch {
-              s = null;
-            }
-          }
-          if (!s || !Array.isArray(s.items)) return false;
-          if (s.filterKey !== buildFilterKey()) return false;
-          cg.cached_state = s;
-          cg.has_loaded_once = true;
-          cachedItems = s.items.slice();
-          cachedSeen = new Set(cachedItems.map(itemKey));
-          cursor = s.cursor ?? null;
-          hasMore =
-            typeof s.hasMore === "boolean" ? s.hasMore : cachedItems.length > 0;
-          favOffset = Number.isFinite(s.favOffset) ? s.favOffset : 0;
-          elGrid.replaceChildren();
-          appendGrid(cachedItems, { fromCache: true });
-          setStatus(`Restored ${cachedItems.length}`);
-          return cachedItems.length > 0;
+          // Cache restoration disabled per user request
+          return false;
         };
 
         const makeUrlStream = (cur) => {
@@ -951,15 +974,29 @@ function ensureHiddenSelectionWidget(node) {
           elStatus.textContent = msg || "";
         };
 
+        const getPrompt = (it) => {
+          const m = it.meta || {};
+          return (
+            m.prompt ||
+            m.Prompt ||
+            m.positive ||
+            m.textPrompt ||
+            ""
+          ).trim();
+        };
+
+        const isUniquePrompt = (it) => {
+          if (!uniqueOnly) return true;
+          const p = getPrompt(it);
+          if (!p) return true;
+          const k = p.toLowerCase();
+          if (seenPrompts.has(k)) return false;
+          seenPrompts.add(k);
+          return true;
+        };
+
         const matchesVideoMode = (it) =>
           videosOnly ? isVideo(it) : !isVideo(it);
-
-        const serverFilteredOut = (it) => {
-          if (videosOnly && !isVideo(it)) return true;
-          if (!videosOnly && isVideo(it)) return true;
-          if (hideNoPrompt && !hasPositivePrompt(it)) return true;
-          return false;
-        };
 
         const nearBottom = () =>
           elScroll.scrollHeight - elScroll.scrollTop - elScroll.clientHeight <=
@@ -1024,6 +1061,17 @@ function ensureHiddenSelectionWidget(node) {
           _ioSentinel.observe(elSentinel);
         };
 
+        const getOptimizedImageUrl = (it) => {
+          if (!it || !it.url) return "";
+          if (
+            it.url.includes("image.civitai.com") &&
+            it.url.includes("/original=true/")
+          ) {
+            return it.url.replace("/original=true/", "/width=320,quality=60/");
+          }
+          return it.url;
+        };
+
         const makeCard = (it) => {
           const d = document.createElement("div");
           d.className = "cg-card";
@@ -1031,6 +1079,8 @@ function ensureHiddenSelectionWidget(node) {
 
           if (isVideo(it)) {
             const v = document.createElement("video");
+            if (it.width && it.height)
+              v.style.aspectRatio = `${it.width}/${it.height}`;
             v.className = "cg-vid";
             v.controls = true;
             v.muted = true;
@@ -1053,10 +1103,12 @@ function ensureHiddenSelectionWidget(node) {
             d.appendChild(v);
           } else {
             const img = document.createElement("img");
+            if (it.width && it.height)
+              img.style.aspectRatio = `${it.width}/${it.height}`;
             img.className = "cg-img";
             img.loading = "lazy";
             img.alt = `#${keyId(it.id)}`;
-            img.src = it.url;
+            img.src = getOptimizedImageUrl(it);
             d.appendChild(img);
           }
 
@@ -1137,6 +1189,96 @@ function ensureHiddenSelectionWidget(node) {
           return d;
         };
 
+        const getOrderedCards = () => {
+          const currentCards = new Map();
+          elGrid.querySelectorAll(".cg-card").forEach((c) => {
+            currentCards.set(c.dataset.selkey, c);
+          });
+          const ordered = [];
+          for (const it of cachedItems) {
+            const key = itemKey(it);
+            if (currentCards.has(key)) {
+              ordered.push(currentCards.get(key));
+            }
+          }
+          return ordered;
+        };
+
+        const distributeMasonry = (nodes) => {
+          let cols = [...elGrid.querySelectorAll(".cg-masonry-col")];
+          if (!cols.length) {
+            let w = elScroll.clientWidth;
+            if (w < 200) w = root.clientWidth;
+            if (w < 200) w = 900;
+
+            const numCols = Math.max(1, Math.floor(w / 280));
+            for (let i = 0; i < numCols; i++) {
+              const c = document.createElement("div");
+              c.className = "cg-masonry-col";
+              cols.push(c);
+              elGrid.appendChild(c);
+            }
+          }
+
+          const colHeights = cols.map((c) => c.offsetHeight);
+
+          nodes.forEach((card) => {
+            let minH = Infinity;
+            let targetIdx = 0;
+            for (let i = 0; i < colHeights.length; i++) {
+              if (colHeights[i] < minH) {
+                minH = colHeights[i];
+                targetIdx = i;
+              }
+            }
+            cols[targetIdx].appendChild(card);
+            colHeights[targetIdx] = cols[targetIdx].offsetHeight;
+          });
+        };
+
+        const rebuildMasonry = () => {
+          // Only rebuild if currently in masonry mode
+          if (
+            cg.view_mode !== "masonry" &&
+            !elRoot.classList.contains("cg-view-masonry")
+          )
+            return;
+
+          const cards = getOrderedCards();
+          elGrid.replaceChildren();
+
+          const w = elScroll.clientWidth || root.clientWidth || 900;
+          const numCols = Math.max(1, Math.floor(w / 280));
+          const cols = [];
+          for (let i = 0; i < numCols; i++) {
+            const c = document.createElement("div");
+            c.className = "cg-masonry-col";
+            cols.push(c);
+            elGrid.appendChild(c);
+          }
+
+          const colHeights = new Array(numCols).fill(0);
+
+          cards.forEach((card) => {
+            let minH = Infinity;
+            let targetIdx = 0;
+            for (let i = 0; i < numCols; i++) {
+              if (colHeights[i] < minH) {
+                minH = colHeights[i];
+                targetIdx = i;
+              }
+            }
+            cols[targetIdx].appendChild(card);
+            colHeights[targetIdx] = cols[targetIdx].offsetHeight;
+          });
+        };
+
+        const unwrapMasonry = () => {
+          const cards = getOrderedCards();
+          elGrid.replaceChildren();
+          elGrid.append(...cards);
+        };
+
         const appendGrid = (items, opts = {}) => {
           const fromCache = !!opts.fromCache;
           const seen = new Set(
@@ -1156,7 +1298,16 @@ function ensureHiddenSelectionWidget(node) {
               cachedSeen.add(key);
             }
           }
-          if (nodes.length) elGrid.append(...nodes);
+          if (nodes.length) {
+            if (
+              cg.view_mode === "masonry" ||
+              elRoot.classList.contains("cg-view-masonry")
+            ) {
+              distributeMasonry(nodes);
+            } else {
+              elGrid.append(...nodes);
+            }
+          }
           if (!fromCache) saveCacheState();
         };
 
@@ -1218,12 +1369,9 @@ function ensureHiddenSelectionWidget(node) {
 
           try {
             const data = await getJSON(makeUrlStream(cursor));
-            const aggregated = Boolean(data?.metadata?.aggregated);
 
             let items = Array.isArray(data?.items) ? data.items : [];
-            if (!aggregated)
-              items = items.filter((it) => !serverFilteredOut(it));
-            items = items.filter(matchesVideoMode);
+            items = applyLocalFilters(items);
 
             appendGrid(items);
 
@@ -1251,10 +1399,11 @@ function ensureHiddenSelectionWidget(node) {
           }
         };
 
-        const applyFavFiltersLocal = (arr) => {
+        const applyLocalFilters = (arr) => {
           let out = arr.slice();
           out = out.filter(matchesVideoMode);
           if (hideNoPrompt) out = out.filter((it) => hasPositivePrompt(it));
+          out = out.filter(isUniquePrompt);
           return out;
         };
 
@@ -1272,7 +1421,8 @@ function ensureHiddenSelectionWidget(node) {
               favoritesArray = Object.values(favoritesMap || {});
             }
 
-            const filtered = applyFavFiltersLocal(favoritesArray);
+            if (uniqueOnly) seenPrompts.clear();
+            const filtered = applyLocalFilters(favoritesArray);
             const start = favOffset;
             const end = favOffset + batchSize();
             const slice = filtered.slice(start, end);
@@ -1323,6 +1473,7 @@ function ensureHiddenSelectionWidget(node) {
             hasMore = true;
             cachedItems = [];
             cachedSeen = new Set();
+            seenPrompts.clear();
             saveCacheState();
 
             if (resetToTop) {
@@ -1349,7 +1500,6 @@ function ensureHiddenSelectionWidget(node) {
           if (_scrollHandlerBound) return;
 
           const markTouched = () => {
-            if (restoringScroll) return;
             userTouchedThisView = true;
           };
 
@@ -1425,11 +1575,9 @@ function ensureHiddenSelectionWidget(node) {
           bindScroll();
           restoreScrollTop();
 
-          const restored = restoreCacheState();
-          if (!cg.has_loaded_once) {
+          // Removed cache restoration per user request
+          if (!cg.has_loaded_once || !elGrid.childElementCount) {
             cg.has_loaded_once = true;
-            if (!restored) await reload(true);
-          } else if (!restored && !elGrid.childElementCount) {
             await reload(true);
           }
         };
@@ -1445,6 +1593,13 @@ function ensureHiddenSelectionWidget(node) {
             "cg-view-list",
           );
           elRoot.classList.add(`cg-view-${m}`);
+
+          if (m === "masonry" && cg.view_mode !== "masonry") {
+            rebuildMasonry();
+          } else if (m !== "masonry" && cg.view_mode === "masonry") {
+            unwrapMasonry();
+          }
+
           try {
             cg.view_mode = m;
           } catch {}
@@ -1524,6 +1679,13 @@ function ensureHiddenSelectionWidget(node) {
           reload(true);
         });
 
+        elBtnUnique.addEventListener("click", () => {
+          uniqueOnly = !uniqueOnly;
+          toggleBtn(elBtnUnique, uniqueOnly);
+          saveFilters();
+          reload(true);
+        });
+
         elBtnFavOnly.addEventListener("click", async () => {
           favoritesOnly = !favoritesOnly;
           toggleBtn(elBtnFavOnly, favoritesOnly);
@@ -1545,6 +1707,22 @@ function ensureHiddenSelectionWidget(node) {
             Math.min(360, Math.floor(w / Math.ceil(w / 280))),
           );
           elGrid.style.setProperty("--colw", `${target}px`);
+
+          if (
+            cg.view_mode === "masonry" ||
+            elRoot.classList.contains("cg-view-masonry")
+          ) {
+            const numCols = Math.max(1, Math.floor(w / 280));
+            const currentCols =
+              elGrid.querySelectorAll(".cg-masonry-col").length;
+            if (
+              currentCols !== numCols &&
+              (currentCols > 0 || elGrid.childElementCount > 0)
+            ) {
+              rebuildMasonry();
+            }
+          }
+
           requestAnimationFrame(checkAndAutofill);
         });
         ro.observe(elScroll);
@@ -1572,6 +1750,7 @@ function ensureHiddenSelectionWidget(node) {
         (async () => {
           toggleBtn(elBtnVideo, videosOnly);
           toggleBtn(elBtnNoPrompt, hideNoPrompt);
+          toggleBtn(elBtnUnique, uniqueOnly);
           toggleBtn(elBtnFavOnly, favoritesOnly);
           setStatus("");
 
