@@ -13,15 +13,21 @@
 - **GitHub**: [https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub](https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub)
 - **Node name in ComfyUI**: **Civitai Discovery Hub**
 
+![Civitai Discovery Hub 1.6.0 with the Filters tab open, an image selected and page controls below the gallery](assets/gallery-1.6.0.png)
+
 ## Changelog
 
 ### 1.6.0 (November 26, 2026)
+
+#### Redesigned gallery interface
+
+- A compact toolbar separates **Filters**, **Model search** and **View** into tabs. **Favorites**, **Refresh**, **Clear previews** and **Display** stay within reach on every tab. The controls reflow when the node is narrower.
+- A teal outline marks the selected card. The footer keeps the selected item ID, page buttons and loading status together below the grid.
 
 #### Gallery and navigation
 
 - The gallery now opens in pages of 24, 50, 100 or 150 items. Use the first, previous, numbered and next buttons below the cards to move between pages. Changing the search filters starts a new result set on page 1.
 - Switching workflow tabs or reopening a saved workflow restores the active page, filters, control panel and node dimensions. Each gallery keeps its own settings and selection.
-- The toolbar groups controls under **Filters**, **Model search** and **View**. Favorites, refresh and display controls are accessible from all three panels.
 - Search for a checkpoint or LoRA by name, then choose a result to see its online gallery. The clear button cancels a pending search and removes the model filter.
 - Fixed empty results with **With prompt**. The gallery requests public generation metadata, recognizes more positive-prompt formats and follows continuation pages when a batch contains only items without a positive prompt.
 
