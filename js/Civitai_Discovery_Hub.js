@@ -1,22 +1,15 @@
 // ----- SECTION: Imports -----
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
+import { buildGalleryView } from "./gallery-view.js";
 
 // ----- SECTION: Constants -----
 const EXT_NAME = "CivitaiDiscoveryHub.InfiniteScroll";
-const DISPLAY_NAME = "🖼️ Civitai Discovery Hub";
 const TARGET_CLASS = "CivitaiDiscoveryHubNode";
 
-const USER_TAG_GROUPS = [
-    { label: "👤 People", items: [{ name: "👩 Woman", id: "5133" }, { name: "👨 Man", id: "5232" }] },
-    { label: "🐾 Animals & Creatures", items: [{ name: "🐾 Animal", id: "111768" }, { name: "🐱 Cat", id: "5132" }, { name: "🐶 Dog", id: "2539" }, { name: "🐉 Dragon", id: "5499" }] },
-    { label: "🎨 Styles & Media", items: [{ name: "📷 Photography", id: "5241" }, { name: "🖼️ PhotoRealistic", id: "172" }, { name: "🖌️ Modern art", id: "617" }, { name: "🎎 Anime", id: "4" }, { name: "🎭 Cartoon", id: "5186" }, { name: "📚 Comics", id: "2397" }] },
-    { label: "🏞️ Environments & Places", items: [{ name: "🌲 Outdoors", id: "111763" }, { name: "🌄 Landscape", id: "8363" }, { name: "🏙️ City", id: "55" }, { name: "🏛️ Architecture", id: "414" }, { name: "🌌 Astronomy", id: "111767" }] },
-    { label: "👗 Clothing & Gear", items: [{ name: "👕 Clothing", id: "5193" }, { name: "🧥 Latex Clothing", id: "111935" }, { name: "🛡️ Armor", id: "5169" }, { name: "🎭 Costume", id: "2435" }] },
-    { label: "🚗 Vehicles & Transport", items: [{ name: "🚉 Transportation", id: "111757" }, { name: "🚗 Car", id: "111805" }, { name: "🏎️ Sports Car", id: "111833" }] },
-    { label: "🎮 Genres & Characters", items: [{ name: "🎮 Game Character", id: "5211" }, { name: "🐲 Fantasy", id: "5207" }, { name: "👾 Sci-Fi", id: "3060" }, { name: "☣️ Post Apocalyptic", id: "213" }, { name: "🤖 Robot", id: "6594" }] },
-    { label: "🍔 Other", items: [{ name: "🍔 Food", id: "3915" }] },
-];
+const galleries = new WeakMap();
+const favoriteChanges = new EventTarget();
+const MEDIA_HOSTS = new Set(["image.civitai.com", "image.civitai.red", "image.civitai.green", "image.civitai.work"]);
 
 // ----- SECTION: Helpers -----
 function sanitizeProxyWidgets(props) {
@@ -47,1019 +40,850 @@ function sanitizeProxyWidgets(props) {
     return props;
 }
 
-const qs = (o) =>
-    Object.entries(o)
-        .filter(([, v]) => v !== undefined && v !== null && v !== "")
-        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-        .join("&");
-
-const getJSON = async (path) => {
-    const r = await api.fetchApi(path);
-    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-    return await r.json();
-};
-
-const keyId = (id) => String(id);
-
-function removeSelectionPort(node) {
-    try {
-        if (!Array.isArray(node.inputs)) return;
-        const idx = node.inputs.findIndex((i) => i && i.name === "selection_data");
-        if (idx >= 0) node.removeInput(idx);
-    } catch { }
-}
-
-function hideWidgetDom(widget) {
-    try {
-        const el = widget?.element || widget?.inputEl || widget?.textarea || widget?.wrapper || widget?.dom || widget?.root;
-
-        if (el && el.style) {
-            el.style.display = "none";
-            el.style.visibility = "hidden";
-            el.style.pointerEvents = "none";
-            el.style.height = "0px";
-            el.style.width = "0px";
-            el.style.opacity = "0";
-            el.style.position = "absolute";
-            el.style.left = "-99999px";
-            el.style.top = "-99999px";
-        }
-
-        if (widget?.html && widget.html.style) {
-            widget.html.style.display = "none";
-            widget.html.style.visibility = "hidden";
-            widget.html.style.pointerEvents = "none";
-            widget.html.style.height = "0px";
-            widget.html.style.width = "0px";
-            widget.html.style.opacity = "0";
-            widget.html.style.position = "absolute";
-            widget.html.style.left = "-99999px";
-            widget.html.style.top = "-99999px";
-        }
-    } catch { }
-}
-
-function getOrCreateCGState(node) {
+function state(node) {
     node.properties = sanitizeProxyWidgets(node.properties || {});
-    node.properties.__cg = node.properties.__cg || {};
-    return node.properties.__cg;
+    return node.properties.__cg ||= {};
 }
 
-function ensureHiddenSelectionWidget(node) {
-    const cg = getOrCreateCGState(node);
+async function jsonRequest(path, options) {
+    const response = await api.fetchApi(path, options);
+    if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || body?.message || [response.status, response.statusText].filter(Boolean).join(" "));
+    }
+    return response.json();
+}
 
-    removeSelectionPort(node);
+function mediaUrl(value) {
+    if (typeof value !== "string") return "";
+    try {
+        const url = new URL(value);
+        return url.protocol === "https:" && MEDIA_HOSTS.has(url.hostname) && !url.port && !url.username && !url.password ? url.href : "";
+    } catch {
+        return "";
+    }
+}
 
-    let wSel = (node.widgets || []).find((w) => w?.name === "selection_data");
-    if (!wSel) {
-        wSel = node.addWidget(
-            "text",
-            "selection_data",
-            typeof cg.selection_data === "string" ? cg.selection_data : "{}",
-            (v) => {
-                const s = typeof v === "string" ? v : String(v ?? "{}");
-                cg.selection_data = s;
-                try {
-                    app?.graph?.change?.();
-                } catch { }
-                try {
-                    node?.graph?.change?.();
-                } catch { }
-                node.setDirtyCanvas(true, true);
-            },
-            { multiline: true }
-        );
-    } else {
-        const prevCb = wSel.callback;
-        wSel.callback = (v) => {
-            const s = typeof v === "string" ? v : String(v ?? "{}");
-            cg.selection_data = s;
-            try {
-                prevCb?.(v);
-            } catch { }
-            try {
-                app?.graph?.change?.();
-            } catch { }
-            try {
-                node?.graph?.change?.();
-            } catch { }
-            node.setDirtyCanvas(true, true);
-        };
+function previewUrl(source, width) {
+    if (!source || width === "original") return source;
+    const url = new URL(source);
+    if (url.search) return source;
+    const parts = url.pathname.split("/");
+    if (parts.length === 4 && /^[a-f0-9-]{36}$/i.test(parts[2]) && parts[3]) {
+        parts.splice(3, 0, "width=" + width);
+        url.pathname = parts.join("/");
+        return url.href;
+    }
+    if (parts.length !== 5 || !parts[1] || !parts[2]) return source;
+    const options = parts[3].split(",");
+    if (!options.some(v => /^(width=\d+|original=true)$/.test(v))) return source;
+    parts[3] = [...options.filter(v => !/^(width|height|original)=/.test(v)), "width=" + width].join(",");
+    url.pathname = parts.join("/");
+    return url.href;
+}
+
+function videoUrl(item) {
+    const meta = item.meta || {};
+    const dedicated = [meta.videoUrl, meta.mp4Url, meta.video, meta.mp4].map(mediaUrl).find(Boolean);
+    const url = mediaUrl(item.url);
+    if (item.type === "image") return "";
+    if (item.type === "video") return url || dedicated || "";
+    return dedicated || (/\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(url) ? url : "");
+}
+
+function galleryWidget(node) {
+    const index = node.inputs?.findIndex(input => input?.name === "selection_data") ?? -1;
+    if (index >= 0) node.removeInput(index);
+    let widget = node.widgets?.find(w => w.name === "selection_data");
+    if (!widget) widget = node.addWidget("text", "selection_data", "{}", () => {}, { multiline: true });
+    widget.computeSize = () => [0, 0];
+    widget.draw = () => {};
+    const element = widget.element || widget.inputEl;
+    if (element?.style) element.style.display = "none";
+    widget.serializeValue = () => {
+        const value = widget.value || "{}";
+        try {
+            const selection = JSON.parse(value);
+            if (!selection?.item) return value;
+            selection.download_image = Boolean(node.outputs?.[2]?.links?.length);
+            return JSON.stringify(selection);
+        } catch {
+            return "{}";
+        }
+    };
+    return widget;
+}
+
+function galleryOptions(node) {
+    const saved = state(node).filters || {};
+    return {
+        nsfw: saved.nsfw || "None", sort: saved.sort || "Newest", period: saved.period || "AllTime",
+        tags: saved.tags || "", username: saved.username || "", limit: String(saved.limit || 24),
+        videos_only: saved.videos_only === true, hide_no_prompt: saved.hide_no_prompt === true,
+        favorites_only: saved.favorites_only === true,
+    };
+}
+
+function createGallery(node) {
+    const root = buildGalleryView(document);
+    const widget = node.addDOMWidget("civitai_gallery", "div", root, { serialize: false });
+    widget.serializeValue = () => undefined;
+    node.size = [1120, 820];
+    const find = name => root.querySelector(`.cg-${name}`);
+    const scroll = find("scroll"), grid = find("masonry"), foot = find("foot");
+    const status = find("status"), retry = find("retry"), favoriteStatus = find("favorite-status");
+    const controls = {
+        nsfw: find("nsfw"), sort: find("sort"), period: find("period"),
+        tags: find("tags"), username: find("username"), limit: find("limit"),
+    };
+    const toggles = {
+        videos_only: find("toggle-video"), hide_no_prompt: find("toggle-noprompt"), favorites_only: find("toggle-favonly"),
+    };
+    const thumb = find("thumb"), model = find("model"), modelQuery = find("model-query");
+    const modelButton = find("find-model"), modelStatus = find("model-status");
+    let modelRequest = null;
+    const renderButton = find("toggle-render"), clearPreviews = find("clear-previews");
+
+    let filters, enabled = true, visible = false, removed = false;
+    let request = null, idsRequest = null, favoriteIds = null, changedIds = new Map();
+    const resolution = find("resolution");
+    let starts = [null];
+    let current = 0, last = null, retryPage = 1;
+    let frame = 0, restoreTop = 0, selectedKey = null;
+    const seen = new Set(), pages = new Map(), stars = new Map(), saving = new Set();
+    let currentCard = null;
+
+    const panels = ["filters", "models", "view"];
+
+    function showPanel(active) {
+        for (const name of panels) {
+            const selected = name === active;
+            const tab = find("tab-" + name);
+            tab.setAttribute("aria-selected", String(selected));
+            tab.tabIndex = selected ? 0 : -1;
+            find("panel-" + name).hidden = !selected;
+        }
     }
 
-    wSel.serializeValue = () => (typeof cg.selection_data === "string" ? cg.selection_data : "{}");
-    wSel.draw = function () { };
-    wSel.computeSize = () => [0, 0];
-    hideWidgetDom(wSel);
+    for (const [index, name] of panels.entries()) {
+        const tab = find("tab-" + name);
+        tab.addEventListener("click", () => {
+            showPanel(name);
+            state(node).panel = name;
+            dirty();
+        });
+        tab.addEventListener("keydown", event => {
+            const keys = { ArrowRight: (index + 1) % panels.length, ArrowLeft: (index + panels.length - 1) % panels.length,
+                Home: 0, End: panels.length - 1 };
+            if (!Object.hasOwn(keys, event.key)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const target = find("tab-" + panels[keys[event.key]]);
+            target.focus();
+            target.click();
+        });
+    }
 
-    if (typeof wSel.value !== "string") wSel.value = typeof cg.selection_data === "string" ? cg.selection_data : "{}";
-    return wSel;
-}
+    function dirty() {
+        node.graph?.change?.();
+        node.setDirtyCanvas(true, true);
+    }
 
-// ----- SECTION: Register Extension -----
-(function () {
-    app.registerExtension({
-        name: EXT_NAME,
+    function select(item, card) {
+        currentCard?.classList.remove("selected");
+        currentCard = card;
+        showSelection(item.id);
+        card.classList.add("selected");
+        const { id, url, type, meta } = item;
+        const value = JSON.stringify({ item: { id, url, type, meta }, download_image: Boolean(node.outputs?.[2]?.links?.length) });
+        node.widgets.find(w => w.name === "selection_data").value = value;
+        dirty();
+    }
 
-        beforeRegisterNodeDef(nodeType, nodeData) {
-            const comfyClass = (nodeType?.comfyClass || nodeData?.name || "").toString();
-            if (comfyClass !== TARGET_CLASS) return;
+    function showSelection(id) {
+        selectedKey = id == null ? null : String(id);
+        find("selection").textContent = selectedKey === null ? "" : `Selected #${selectedKey}`;
+    }
 
-            const _configure = nodeType.prototype.configure;
-            nodeType.prototype.configure = function (o, ...rest) {
-                if (o && o.properties) o.properties = sanitizeProxyWidgets({ ...o.properties });
-                const r = _configure?.call(this, o, ...rest);
+    function updateStar(key) {
+        const star = stars.get(key);
+        if (!star) return;
+        const active = filters.favorites_only || Boolean(favoriteIds?.has(key));
+        star.textContent = active ? "★" : "☆";
+        star.classList.toggle("fav", active);
+        star.setAttribute("aria-pressed", String(active));
+        star.setAttribute("aria-label", active ? "Remove from favorites" : "Add to favorites");
+        star.title = star.getAttribute("aria-label");
+        star.disabled = saving.has(key) || (!filters.favorites_only && favoriteIds === null);
+    }
 
-                try {
-                    removeSelectionPort(this);
-                    ensureHiddenSelectionWidget(this);
-                } catch { }
+    async function loadIds() {
+        if (favoriteIds !== null || idsRequest || !enabled || !visible || removed || filters.favorites_only) return;
+        const controller = idsRequest = new AbortController();
+        changedIds = new Map();
+        try {
+            const data = await jsonRequest("/civitai_gallery/get_favorite_ids", { signal: controller.signal });
+            if (idsRequest !== controller) return;
+            if (!Array.isArray(data?.ids)) throw new Error("Invalid favorites index");
+            favoriteIds = new Set(data.ids.map(String));
+            for (const [id, active] of changedIds) active ? favoriteIds.add(id) : favoriteIds.delete(id);
+            favoriteStatus.textContent = "";
+            for (const key of stars.keys()) updateStar(key);
+        } catch (error) {
+            if (idsRequest === controller) favoriteStatus.textContent = `Favorites unavailable: ${error.message}. Use Refresh to retry.`;
+        } finally {
+            if (idsRequest === controller) idsRequest = null;
+        }
+    }
 
-                return r;
-            };
+    async function toggleFavorite(item) {
+        const key = String(item.id);
+        if (saving.has(key)) return;
+        const favorite = !(filters.favorites_only || favoriteIds?.has(key));
+        const body = { item, favorite };
+        if (favorite && filters.tags) body.tag_id = filters.tags;
+        saving.add(key);
+        updateStar(key);
+        try {
+            const data = await jsonRequest("/civitai_gallery/toggle_favorite", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+            });
+            if (data.status !== "added" && data.status !== "removed") throw new Error("Unexpected favorite status");
+            favoriteChanges.dispatchEvent(new CustomEvent("change", { detail: { key, active: data.status === "added" } }));
+            if (!removed) favoriteStatus.textContent = "";
+        } catch (error) {
+            if (!removed) favoriteStatus.textContent = `Could not save favorite: ${error.message}`;
+        } finally {
+            saving.delete(key);
+            if (!removed) updateStar(key);
+        }
+    }
 
-            const _onSerialize = nodeType.prototype.onSerialize;
-            nodeType.prototype.onSerialize = function (o, ...rest) {
-                const out = _onSerialize?.call(this, o, ...rest) ?? o ?? {};
-                if (out && out.properties) sanitizeProxyWidgets(out.properties);
-                return out;
-            };
+    function favoriteChanged({ detail: { key, active } }) {
+        if (idsRequest) changedIds.set(key, active);
+        if (favoriteIds) active ? favoriteIds.add(key) : favoriteIds.delete(key);
+        if (filters.favorites_only) reset(true);
+        else updateStar(key);
+    }
+    favoriteChanges.addEventListener("change", favoriteChanged);
 
-            const _onNodeCreated = nodeType.prototype.onNodeCreated;
-            nodeType.prototype.onNodeCreated = function () {
-                const r = _onNodeCreated?.apply(this, arguments);
-                const node = this;
+    const videoObserver = new IntersectionObserver(entries => {
+        if (!enabled || !visible || removed) return;
+        for (const entry of entries) {
+            const video = entry.target;
+            if (!entry.isIntersecting) {
+                video.pause();
+            } else if (!video.getAttribute("src") && video.dataset.src) {
+                video.preload = "metadata";
+                video.src = video.dataset.src;
+            }
+        }
+    }, { root: scroll, rootMargin: "350px" });
 
-                node.properties = sanitizeProxyWidgets(node.properties || {});
-                const cg = getOrCreateCGState(node);
+    function cardFor(item) {
+        const key = String(item.id), meta = item.meta || {};
+        const card = document.createElement("div");
+        card.className = "cg-card";
+        card.dataset.selkey = `image:${key}`;
+        card.tabIndex = 0;
+        card.setAttribute("role", "group");
+        card.setAttribute("aria-label", `Civitai media ${key}. Press Enter to select.`);
+        if (key === selectedKey) {
+            card.classList.add("selected");
+            currentCard = card;
+        }
+        const source = videoUrl(item);
+        const media = document.createElement(source ? "video" : "img");
+        media.style.aspectRatio = item.width > 0 && item.height > 0 ? `${item.width} / ${item.height}` : "4 / 5";
+        if (source) {
+            media.className = "cg-vid";
+            media.controls = true;
+            media.muted = true;
+            media.playsInline = true;
+            media.preload = "none";
+            media.dataset.src = source;
+            const poster = [item.thumbnail, item.preview, item.cover, item.coverUrl, item.previewUrl, item.image,
+                meta.thumbnail, meta.thumbnailUrl, meta.preview, meta.previewUrl, meta.image].map(mediaUrl).find(Boolean);
+            if (poster) media.poster = previewUrl(poster, resolution.value);
+            // Seek once at metadata load to show a first frame on browsers that render a blank poster.
+            else media.addEventListener("loadedmetadata", () => {
+                if (media.paused && !media.currentTime && media.duration > 0) media.currentTime = Math.min(0.1, media.duration / 2);
+            }, { once: true });
+            videoObserver.observe(media);
+        } else {
+            media.className = "cg-img";
+            media.loading = "lazy";
+            media.alt = `Civitai image ${key}`;
+            const image = mediaUrl(item.url);
+            if (image) media.src = previewUrl(image, resolution.value);
+        }
+        card.appendChild(media);
+        const bar = document.createElement("div");
+        bar.className = "cg-meta";
+        const left = document.createElement("div");
+        left.className = "cg-meta-left";
+        const date = new Date(item.createdAt);
+        const level = item.browsingLevel ?? item.nsfwLevel;
+        const rating = ({ 1: "None", 2: "Soft", 4: "Mature", 8: "X", 16: "XXX", 32: "Blocked" })[level]
+            || (typeof level === "string" ? level : item.nsfw === true ? "X" : item.nsfw === false ? "None" : "Unrated");
+        for (const label of [rating, item.createdAt && Number.isFinite(date.getTime()) ? date.toLocaleDateString() : ""]) {
+            if (!label) continue;
+            const chip = document.createElement("span");
+            chip.className = "cg-chip";
+            chip.textContent = label;
+            left.appendChild(chip);
+        }
+        const star = document.createElement("button");
+        star.className = "cg-star";
+        stars.set(key, star);
+        updateStar(key);
+        star.addEventListener("click", event => { event.stopPropagation(); void toggleFavorite(item); });
+        const open = document.createElement("a");
+        open.className = "cg-open";
+        open.href = `https://civitai.com/images/${encodeURIComponent(key)}`;
+        open.title = "Open on Civitai";
+        open.setAttribute("aria-label", "Open media " + key + " on Civitai");
+        open.target = "_blank";
+        open.rel = "noopener noreferrer";
+        open.textContent = "\u2197";
+        open.addEventListener("click", event => event.stopPropagation());
+        const actions = document.createElement("div");
+        actions.className = "cg-meta-left";
+        actions.append(star, open);
+        bar.append(left, actions);
+        card.appendChild(bar);
+        card.addEventListener("click", () => select(item, card));
+        card.addEventListener("keydown", event => {
+            if (event.target !== card || (event.key !== "Enter" && event.key !== " ")) return;
+            event.preventDefault();
+            select(item, card);
+        });
+        return card;
+    }
 
-                if (!cg.colored_once) {
-                    node.color = "#000000";
-                    node.bgcolor = "#0b0b0b";
-                    node.boxcolor = "#1e1e1e";
-                    node.title_color = "#ffffff";
-                    cg.colored_once = true;
-                    node.setDirtyCanvas(true, true);
+    function unmount(page) {
+        if (!page.mounted) return;
+        // Keep the page footprint when releasing its media so scrolling cannot jump.
+        const height = page.element.offsetHeight || estimateHeight(page.items);
+        page.element.style.height = `${height}px`;
+        for (const image of page.element.querySelectorAll("img")) image.removeAttribute("src");
+        for (const video of page.element.querySelectorAll("video")) {
+            videoObserver.unobserve(video);
+            video.pause();
+            delete video.dataset.src;
+            video.removeAttribute("poster");
+            if (video.getAttribute("src")) {
+                video.removeAttribute("src");
+                video.load();
+            }
+        }
+        if (currentCard && page.element.contains(currentCard)) currentCard = null;
+        for (const item of page.items) stars.delete(String(item.id));
+        page.element.replaceChildren();
+        page.mounted = false;
+    }
+
+    function mount(page) {
+        if (page.mounted) return;
+        page.mounted = true;
+        page.element.style.height = "";
+        page.element.append(...page.items.map(cardFor));
+    }
+
+    const pageObserver = new IntersectionObserver(entries => {
+        if (!enabled || !visible || removed) return;
+        for (const entry of entries) {
+            const page = pages.get(entry.target);
+            if (!page) continue;
+            if (entry.isIntersecting) mount(page);
+            else if (!page.element.contains(document.activeElement)) unmount(page);
+        }
+    }, { root: scroll, rootMargin: "350px" });
+
+    function estimateHeight(items) {
+        const width = grid.clientWidth || Math.max(260, (node.size?.[0] || 900) - 32);
+        const count = Math.max(1, Math.floor((width + 12) / (Number(thumb.value) + 12)));
+        const column = (width - (count - 1) * 12) / count;
+        const total = items.reduce((sum, item) => sum + column * (item.width > 0 && item.height > 0 ? item.height / item.width : 1.25) + 55, 0);
+        return Math.ceil(total / Math.min(items.length, count));
+    }
+
+    function append(items) {
+        const fresh = [];
+        for (const item of items) {
+            if (item?.id == null || seen.has(String(item.id))) continue;
+            fresh.push(item);
+            seen.add(String(item.id));
+        }
+        // Keep at least one full row even with small thumbnails on a wide node.
+        const columns = Math.max(1, Math.floor((grid.clientWidth + 12) / (Number(thumb.value) + 12)));
+        const groupSize = Math.ceil(6 / columns) * columns;
+        for (let start = 0; start < fresh.length; start += groupSize) {
+            const chunk = fresh.slice(start, start + groupSize);
+            const element = document.createElement("div");
+            element.className = "cg-page";
+            element.style.height = `${estimateHeight(chunk)}px`;
+            const page = { element, items: chunk, mounted: false };
+            const first = pages.size === 0;
+            pages.set(element, page);
+            grid.appendChild(element);
+            if (first) mount(page);
+            pageObserver.observe(element);
+        }
+        return fresh.length;
+    }
+
+    function schedule() {
+        if (frame || !enabled || !visible || removed) return;
+        frame = requestAnimationFrame(() => {
+            frame = 0;
+            if (!enabled || !visible || removed || request) return;
+            if (restoreTop > 0) {
+                scroll.scrollTop = restoreTop;
+                if (scroll.scrollTop >= restoreTop - 1 || current > 0) restoreTop = 0;
+            }
+        });
+    }
+
+    function streamParams(token) {
+        const params = new URLSearchParams({
+            nsfw: filters.nsfw, sort: filters.sort, period: filters.period,
+            videos_only: filters.videos_only, hide_no_prompt: filters.hide_no_prompt,
+        });
+        if (filters.username) params.set("username", filters.username);
+        if (filters.tags) params.set("tags", filters.tags);
+        if (filters.favorites_only) {
+            params.set("offset", String(token ?? 0));
+            params.set("limit", filters.limit);
+            return `/civitai_gallery/get_favorites_images?${params}`;
+        }
+        if (state(node).model?.id) params.set("modelId", state(node).model.id);
+        params.set("min_batch", filters.limit);
+        params.set("include_videos", filters.videos_only);
+        if (token != null) params.set("cursor", token);
+        return `/civitai_gallery/images_stream?${params}`;
+    }
+
+    function renderPager() {
+        const available = last ?? starts.length;
+        const active = current || retryPage;
+        const busy = Boolean(request);
+        find("first").disabled = find("prev").disabled = busy || active === 1;
+        find("next").disabled = busy || active >= available;
+        const numbers = find("numbers");
+        numbers.replaceChildren();
+        const start = Math.max(1, Math.min(active - 2, available - 4));
+        for (let n = start; n <= Math.min(available, start + 4); n++) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "cg-btn";
+            button.textContent = String(n);
+            button.setAttribute("aria-label", "Page " + n);
+            if (n === active) button.setAttribute("aria-current", "page");
+            button.disabled = busy || n === active;
+            button.addEventListener("click", () => loadPage(n));
+            numbers.appendChild(button);
+        }
+    }
+
+    async function loadPage(number) {
+        if (removed || !enabled || !visible || request || number < 1 || number > (last ?? starts.length)) return;
+        const controller = request = new AbortController();
+        retryPage = number;
+        retry.hidden = true;
+        renderPager();
+        status.textContent = "Loading page " + number + "...";
+        let token = filters.favorites_only ? (number - 1) * Number(filters.limit) : starts[number - 1];
+        try {
+            let data, following, repeated;
+            const used = new Set(starts.slice(0, number - 1).map(String));
+            // A filtered upstream batch can be empty even though a later batch matches.
+            for (let attempt = 0; attempt < 3; attempt++) {
+                used.add(String(token));
+                data = await jsonRequest(streamParams(token), { signal: controller.signal });
+                if (controller !== request) return;
+                if (!Array.isArray(data?.items) || !data.metadata) throw new Error("Invalid gallery response");
+                following = filters.favorites_only ? data.metadata.nextOffset : data.metadata.nextCursor;
+                repeated = following != null && used.has(String(following));
+                if (data.items.length || following == null || repeated) break;
+                token = following;
+            }
+            if (filters.favorites_only) {
+                last = Math.max(1, Number(data.metadata.totalPages) || Math.ceil(data.metadata.totalItems / Number(filters.limit)) || 1);
+            } else {
+                if (following == null || repeated) {
+                    starts.length = number;
+                    last = number;
+                } else if (starts[number] !== following) {
+                    starts.length = number;
+                    starts.push(following);
+                    last = null;
                 }
-
-                removeSelectionPort(node);
-                const wSel = ensureHiddenSelectionWidget(node);
-
-                const uid = `cg-${Math.random().toString(36).slice(2, 9)}`;
-                const root = document.createElement("div");
-                root.id = uid;
-
-                root.innerHTML = `
-<style>
-#${uid}{height:100%;width:100%;box-sizing:border-box}
-#${uid} .cg-root{
-  height:100%;display:flex;flex-direction:column;gap:10px;color:var(--node-text-color);
-  font-family:ui-sans-serif,system-ui,-apple-system;overflow:hidden;
-  --cg-neon:#39d0ff; --cg-neon2:#6a5cff; --cg-chip-bg:rgba(255,255,255,.06);
-  --cg-surface:rgba(20,20,30,.55); --cg-border:rgba(255,255,255,.12); --cg-shadow:0 10px 30px rgba(0,0,0,.35);
-  background:
-    radial-gradient(1200px 400px at -10% -10%, rgba(57,208,255,.10), transparent 70%),
-    radial-gradient(900px 300px at 120% -20%, rgba(106,92,255,.08), transparent 60%);
-  border-radius:14px;
-}
-#${uid} .cg-header{position:relative;padding:10px 12px;border-radius:14px;background:linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.02));border:1px solid var(--cg-border);box-shadow:var(--cg-shadow)}
-#${uid} .cg-title{display:flex;align-items:center;gap:10px;margin-bottom:8px;letter-spacing:.3px;font-weight:700}
-#${uid} .cg-title .dot{width:10px;height:10px;border-radius:50%;background:radial-gradient(closest-side, var(--cg-neon), transparent);box-shadow:0 0 12px var(--cg-neon)}
-#${uid} .cg-sub{opacity:.7;font-size:12px}
-#${uid} .cg-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
-#${uid} .cg-input,#${uid} .cg-select{padding:8px 10px;border:1px solid var(--cg-border);background:var(--cg-surface);color:var(--node-text-color);border-radius:10px;height:32px;backdrop-filter:blur(8px)}
-#${uid} .cg-select{appearance:none;background-image:linear-gradient(45deg, transparent 50%, var(--cg-neon) 50%),linear-gradient(135deg, var(--cg-neon) 50%, transparent 50%);background-position:calc(100% - 16px) calc(50% + 3px), calc(100% - 12px) calc(50% + 3px);background-size:6px 6px, 6px 6px;background-repeat:no-repeat;padding-right:26px}
-#${uid} .cg-btn{padding:8px 12px;border:1px solid var(--cg-border);background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));border-radius:10px;cursor:pointer;user-select:none;position:relative;overflow:hidden;transition:.18s ease;box-shadow:var(--cg-shadow)}
-#${uid} .cg-btn:hover{filter:brightness(1.08)}
-#${uid} .cg-btn.toggle.active{box-shadow:0 0 0 1px rgba(57,208,255,.35) inset, 0 0 0 2px rgba(106,92,255,.25) inset, var(--cg-shadow);outline:2px solid var(--cg-neon);outline-offset:0}
-#${uid} .cg-scroll{
-  flex:1;min-height:0;overflow:auto;border-radius:14px;background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));
-  border:1px solid var(--cg-border);padding:10px;backdrop-filter:blur(4px);box-shadow:var(--cg-shadow);
-  overflow-anchor:none;
-  overscroll-behavior:contain;
-}
-#${uid} .cg-scroll::-webkit-scrollbar{width:10px;height:10px}
-#${uid} .cg-scroll::-webkit-scrollbar-thumb{background:linear-gradient(var(--cg-neon), var(--cg-neon2));border-radius:10px}
-#${uid} .cg-masonry{column-gap:12px;--colw:280px;column-width:var(--colw)}
-#${uid} .cg-card{
-  display:inline-block;width:100%;margin:0 0 12px;border:1px solid var(--cg-border);border-radius:14px;overflow:hidden;
-  background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));position:relative;break-inside:avoid;opacity:0;transform:translateY(6px);
-  transition:opacity .18s ease, transform .18s ease, box-shadow .2s ease;box-shadow:var(--cg-shadow);
-  overflow-anchor:none;
-}
-#${uid} .cg-card.show{opacity:1;transform:translateY(0)}
-#${uid} .cg-card:hover{box-shadow:0 0 24px rgba(57,208,255,.13), var(--cg-shadow)}
-#${uid} .cg-card.selected{outline:2px solid var(--cg-neon);outline-offset:-2px;box-shadow:0 0 28px rgba(57,208,255,.15), var(--cg-shadow)}
-#${uid} .cg-img,#${uid} .cg-vid{width:100%;height:auto;display:block;background:#0e0f13}
-#${uid} .cg-vid{max-height:72vh}
-#${uid} .cg-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px}
-#${uid} .cg-meta-left{display:flex;align-items:center;gap:8px}
-#${uid} .cg-chip{font-size:11px;background:var(--cg-chip-bg);border:1px solid var(--cg-border);padding:2px 8px;border-radius:999px}
-#${uid} .cg-open{font-size:12px;text-decoration:none;border:1px solid var(--cg-border);padding:4px 8px;border-radius:8px;background:var(--cg-surface);color:var(--node-text-color);opacity:.95}
-#${uid} .cg-open:hover{opacity:1;filter:brightness(1.08)}
-#${uid} .cg-star{border:none;background:transparent;font-size:20px;line-height:1;cursor:pointer;color:#8b8b8b;transition:.15s}
-#${uid} .cg-star:hover{transform:scale(1.06)}
-#${uid} .cg-star.fav{color:#ffd970;text-shadow:0 0 8px rgba(255,217,112,.35)}
-#${uid} .cg-foot{display:flex;align-items:center;gap:10px;flex-shrink:0;padding:10px;border:1px solid var(--cg-border);border-radius:14px;background:linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.02));box-shadow:var(--cg-shadow)}
-#${uid} .cg-status{font-size:12px;opacity:.8}
-#${uid} .cg-sentinel{width:100%;height:1px}
-#${uid} .cg-toggle-render.cg-render-on{color:#22c55e;border-color:#22c55e66}
-#${uid} .cg-toggle-render.cg-render-off{color:#ef4444;border-color:#ef444466}
-#${uid} .cg-scroll.paused{display:none !important}
-#${uid} .cg-foot.paused{display:none !important}
-</style>
-
-<div class="cg-root">
-  <div class="cg-header">
-    <div class="cg-title"><span class="dot"></span><div>${DISPLAY_NAME}</div><div class="cg-sub">Neon UI • Infinite scroll</div></div>
-    <div class="cg-controls">
-      <label>NSFW</label>
-      <select class="cg-select cg-nsfw">
-        <option>None</option><option>Soft</option><option>Mature</option><option>X</option>
-      </select>
-
-      <label>Sort</label>
-      <select class="cg-select cg-sort">
-        <option>Newest</option><option>Most Reactions</option><option>Most Comments</option>
-      </select>
-
-      <label>Period</label>
-      <select class="cg-select cg-period">
-        <option>AllTime</option><option>Year</option><option>Month</option><option>Week</option><option>Day</option>
-      </select>
-
-      <label>Tags</label>
-      <select class="cg-select cg-tags"><option value="">None</option></select>
-
-      <input class="cg-input cg-username" placeholder="Username">
-      <button class="cg-btn cg-search">Apply</button>
-
-      <span style="flex:1"></span>
-
-      <label>Batch</label>
-      <select class="cg-select cg-limit">
-        <option value="24" selected>24</option>
-        <option value="50">50</option>
-        <option value="100">100</option>
-        <option value="150">150</option>
-      </select>
-
-      <button class="cg-btn toggle cg-toggle-video">Videos only</button>
-      <button class="cg-btn toggle cg-toggle-noprompt">Hide no-prompt</button>
-      <button class="cg-btn toggle cg-toggle-favonly">Favorites only</button>
-
-      <button class="cg-btn cg-refresh">Refresh</button>
-      <button class="cg-btn cg-toggle-render cg-render-on">Display: ON</button>
-    </div>
-  </div>
-
-  <div class="cg-scroll">
-    <div class="cg-masonry"></div>
-    <div class="cg-sentinel"></div>
-  </div>
-
-  <div class="cg-foot">
-    <span class="cg-status" style="margin-left:auto"></span>
-  </div>
-</div>
-        `;
-
-                node.addDOMWidget("civitai_gallery", "div", root, {});
-                node.size = [1120, 820];
-
-                const MIN_W = 900;
-                const MIN_H = 650;
-
-                const $ = (s) => root.querySelector(s);
-
-                const elNSFW = $(".cg-nsfw");
-                const elSort = $(".cg-sort");
-                const elPeriod = $(".cg-period");
-                const elTags = $(".cg-tags");
-                const elUser = $(".cg-username");
-                const elSearch = $(".cg-search");
-                const elRefresh = $(".cg-refresh");
-                const elStatus = $(".cg-status");
-
-                const elScroll = root.querySelector(".cg-scroll");
-                const elGrid = root.querySelector(".cg-masonry");
-                const elSentinel = root.querySelector(".cg-sentinel");
-
-                const elBtnVideo = $(".cg-toggle-video");
-                const elBtnNoPrompt = $(".cg-toggle-noprompt");
-                const elBtnFavOnly = $(".cg-toggle-favonly");
-                const elLimitSel = $(".cg-limit");
-                const elBtnRender = $(".cg-toggle-render");
-
-                let loading = false;
-                let hasMore = true;
-                let favoritesOnly = false;
-                let videosOnly = false;
-                let hideNoPrompt = false;
-
-                let favoritesMap = {};
-                let favoritesArray = [];
-                let cursor = null;
-                let favOffset = 0;
-
-                let renderEnabled = true;
-                let _scrollHandlerBound = null;
-                let _ioSentinel = null;
-                let _ioVideo = null;
-
-                const LS_RENDER_KEY = `CDH:display:${location.pathname}:${TARGET_CLASS}:${node.id}`;
-                const LS_SCROLL_KEY = `CDH:scroll:${location.pathname}:${TARGET_CLASS}:${node.id}`;
-
-                let inView = true;
-                let userTouchedThisView = false;
-                let autofillArmed = false;
-
-                let restoringScroll = false;
-                let _viewRAF = 0;
-                let _scrollSaveRAF = 0;
-
-                let lastScrollTop = Number.isFinite(cg.scroll_top) ? cg.scroll_top : 0;
-
-                const setHiddenSelectionPayload = (payloadObj) => {
-                    const s = JSON.stringify(payloadObj || {});
-                    cg.selection_data = s;
-                    if (wSel) wSel.value = s;
-                    try {
-                        app?.graph?.change?.();
-                    } catch { }
-                    try {
-                        node?.graph?.change?.();
-                    } catch { }
-                    node.setDirtyCanvas(true, true);
-                };
-
-                const isNodeOnScreen = () => {
-                    try {
-                        const va = app?.canvas?.visible_area || app?.canvas?.ds?.visible_area;
-                        if (!va || va.length < 4) return true;
-
-                        const vx = va[0],
-                            vy = va[1],
-                            vw = va[2],
-                            vh = va[3];
-
-                        const nx = node.pos[0],
-                            ny = node.pos[1];
-                        const nw = node.size[0],
-                            nh = node.size[1];
-
-                        return nx + nw > vx && nx < vx + vw && ny + nh > vy && ny < vy + vh;
-                    } catch {
-                        return true;
-                    }
-                };
-
-                const getSavedScrollTop = () => {
-                    const fromCg = Number.isFinite(cg.scroll_top) ? cg.scroll_top : null;
-                    if (fromCg != null) return fromCg;
-
-                    try {
-                        const v = parseInt(localStorage.getItem(LS_SCROLL_KEY) || "0", 10);
-                        return Number.isFinite(v) ? v : 0;
-                    } catch {
-                        return 0;
-                    }
-                };
-
-                const saveScrollTopNow = () => {
-                    const v = Number.isFinite(lastScrollTop) ? lastScrollTop : elScroll?.scrollTop ?? 0;
-                    cg.scroll_top = v;
-                    try {
-                        localStorage.setItem(LS_SCROLL_KEY, String(v));
-                    } catch { }
-                };
-
-                const saveScrollTop = () => {
-                    if (_scrollSaveRAF) return;
-                    _scrollSaveRAF = requestAnimationFrame(() => {
-                        _scrollSaveRAF = 0;
-                        saveScrollTopNow();
-                    });
-                };
-
-                const restoreScrollTop = () => {
-                    const v = getSavedScrollTop();
-                    lastScrollTop = v;
-                    restoringScroll = true;
-
-                    requestAnimationFrame(() => {
-                        if (elScroll) elScroll.scrollTop = v;
-
-                        setTimeout(() => {
-                            if (elScroll && !userTouchedThisView) elScroll.scrollTop = v;
-                            restoringScroll = false;
-                        }, 60);
-                    });
-                };
-
-                const startViewportWatch = () => {
-                    const tick = () => {
-                        const now = isNodeOnScreen();
-                        if (now !== inView) {
-                            inView = now;
-
-                            if (!inView) {
-                                saveScrollTopNow();
-                            } else {
-                                userTouchedThisView = false;
-                                restoreScrollTop();
-                            }
-                        }
-                        _viewRAF = requestAnimationFrame(tick);
-                    };
-                    _viewRAF = requestAnimationFrame(tick);
-                };
-
-                const stopViewportWatch = () => {
-                    try {
-                        cancelAnimationFrame(_viewRAF);
-                    } catch { }
-                    _viewRAF = 0;
-                };
-
-                startViewportWatch();
-
-                (function populateTags() {
-                    const keep = elTags.value || "";
-                    elTags.replaceChildren(new Option("None", ""));
-                    for (const group of USER_TAG_GROUPS) {
-                        const og = document.createElement("optgroup");
-                        og.label = group.label;
-                        for (const t of group.items) og.appendChild(new Option(t.name, String(t.id)));
-                        elTags.appendChild(og);
-                    }
-                    if ([...elTags.options].some((o) => o.value === keep)) elTags.value = keep;
-                })();
-
-                const loadFavoritesMap = async () => {
-                    try {
-                        favoritesMap = await getJSON("/civitai_gallery/get_all_favorites_data");
-                    } catch {
-                        favoritesMap = {};
-                    }
-                };
-
-                const getItemNsfw = (it) => (typeof it?.nsfwLevel === "string" ? it.nsfwLevel : it?.nsfw ? "X" : "None");
-
-                const isVideo = (it) => {
-                    const u = (it?.url || "").toLowerCase();
-                    if (u.endsWith(".mp4") || u.endsWith(".webm")) return true;
-                    const m = it?.meta || {};
-                    const mv = String(m.video || m.videoUrl || m.mp4 || m.mp4Url || "").toLowerCase();
-                    return mv.endsWith(".mp4") || mv.endsWith(".webm");
-                };
-
-                const civitaiPageUrl = (it) => it.pageUrl || it.postUrl || `https://civitai.com/images/${it.id}`;
-
-                const getPositivePrompt = (it) => it?.meta?.prompt || it?.meta?.Prompt || it?.meta?.positive || it?.meta?.textPrompt || "";
-
-                const hasPositivePrompt = (it) => !!String(getPositivePrompt(it) || "").trim();
-
-                const batchSize = () => {
-                    const v = parseInt(elLimitSel.value || "24", 10);
-                    if (Number.isNaN(v)) return 24;
-                    return Math.min(500, Math.max(12, v));
-                };
-
-                const makeUrlStream = (cur) => {
-                    const params = {
-                        min_batch: batchSize(),
-                        cursor: cur || "",
-                        sort: elSort.value,
-                        period: elPeriod.value,
-                        username: elUser.value.trim(),
-                        nsfw: elNSFW.value || "None",
-                        include_videos: videosOnly ? "true" : "false",
-                        videos_only: videosOnly ? "true" : "false",
-                        hide_no_prompt: hideNoPrompt ? "true" : "false",
-                        time_budget_ms: videosOnly ? "1200" : "",
-                    };
-                    if (elTags.value) params.tags = elTags.value;
-                    return `/civitai_gallery/images_stream?${qs(params)}`;
-                };
-
-                const chip = (t) => {
-                    const s = document.createElement("span");
-                    s.className = "cg-chip";
-                    s.textContent = t;
-                    return s;
-                };
-
-                const posterFromItem = (it) => {
-                    const m = it?.meta || {};
-                    return (
-                        it.thumbnail ||
-                        it.preview ||
-                        it.cover ||
-                        it.coverUrl ||
-                        it.previewUrl ||
-                        it.image ||
-                        m.thumbnail ||
-                        m.thumbnailUrl ||
-                        m.preview ||
-                        m.previewUrl ||
-                        m.image ||
-                        ""
-                    );
-                };
-
-                const setStatus = (msg) => {
-                    elStatus.textContent = msg || "";
-                };
-
-                const matchesVideoMode = (it) => (videosOnly ? isVideo(it) : !isVideo(it));
-
-                const serverFilteredOut = (it) => {
-                    if (videosOnly && !isVideo(it)) return true;
-                    if (!videosOnly && isVideo(it)) return true;
-                    if (hideNoPrompt && !hasPositivePrompt(it)) return true;
-                    return false;
-                };
-
-                const nearBottom = () => elScroll.scrollHeight - elScroll.scrollTop - elScroll.clientHeight <= 900;
-
-                const setupObservers = () => {
-                    _ioVideo = new IntersectionObserver(
-                        (entries) => {
-                            if (!renderEnabled || !inView) return;
-
-                            for (const e of entries) {
-                                const v = e.target;
-                                if (!v || v.tagName !== "VIDEO") continue;
-                                if (e.isIntersecting) {
-                                    if (!v.src && v.dataset.src) {
-                                        v.preload = "metadata";
-                                        v.src = v.dataset.src;
-                                        v.load();
-
-                                        const kickPreview = () => {
-                                            try {
-                                                const t = v.duration && isFinite(v.duration) ? Math.min(0.1, Math.max(0.02, v.duration * 0.02)) : 0.1;
-                                                if (v.readyState < 2) return;
-                                                v.currentTime = t;
-                                            } catch { }
-                                        };
-
-                                        v.addEventListener("loadedmetadata", kickPreview, { once: true });
-
-                                        setTimeout(() => {
-                                            if (v.readyState < 2) {
-                                                v.preload = "auto";
-                                                v.load();
-                                                setTimeout(kickPreview, 200);
-                                            }
-                                        }, 1200);
-                                    }
-                                }
-                            }
-                        },
-                        { root: elScroll, rootMargin: "1200px" }
-                    );
-
-                    _ioSentinel = new IntersectionObserver(
-                        (entries) => {
-                            if (!renderEnabled || !inView) return;
-                            if (restoringScroll) return;
-                            if (!autofillArmed && !userTouchedThisView) return;
-
-                            for (const e of entries) {
-                                if (e.isIntersecting && !loading && hasMore) loadMore();
-                            }
-                        },
-                        { root: elScroll, rootMargin: "1200px" }
-                    );
-
-                    _ioSentinel.observe(elSentinel);
-                };
-
-                const makeCard = (it) => {
-                    const d = document.createElement("div");
-                    d.className = "cg-card";
-                    d.dataset.selkey = `image:${keyId(it.id)}`;
-
-                    if (isVideo(it)) {
-                        const v = document.createElement("video");
-                        v.className = "cg-vid";
-                        v.controls = true;
-                        v.muted = true;
-                        v.playsInline = true;
-                        v.preload = "none";
-                        const poster = posterFromItem(it);
-                        if (poster) v.poster = poster;
-                        v.dataset.src = it.url || it?.meta?.videoUrl || it?.meta?.mp4Url || "";
-
-                        const freeze = () => {
-                            try {
-                                v.pause();
-                            } catch { }
-                        };
-                        v.addEventListener("seeked", freeze);
-                        v.addEventListener("loadeddata", freeze, { once: true });
-
-                        _ioVideo?.observe(v);
-                        d.appendChild(v);
-                    } else {
-                        const img = document.createElement("img");
-                        img.className = "cg-img";
-                        img.loading = "lazy";
-                        img.alt = `#${keyId(it.id)}`;
-                        img.src = it.url;
-                        d.appendChild(img);
-                    }
-
-                    const meta = document.createElement("div");
-                    meta.className = "cg-meta";
-
-                    const left = document.createElement("div");
-                    left.className = "cg-meta-left";
-                    left.appendChild(chip(getItemNsfw(it)));
-                    left.appendChild(chip(new Date(it.createdAt || Date.now()).toLocaleDateString()));
-
-                    const open = document.createElement("a");
-                    open.className = "cg-open";
-                    open.href = civitaiPageUrl(it);
-                    open.target = "_blank";
-                    open.rel = "noopener noreferrer";
-                    open.textContent = "Open ↗";
-                    open.addEventListener("click", (e) => e.stopPropagation());
-
-                    const star = document.createElement("button");
-                    star.className = "cg-star";
-                    star.title = "Toggle Favorite";
-
-                    const setStar = (on) => {
-                        if (on) {
-                            star.classList.add("fav");
-                            star.textContent = "★";
-                        } else {
-                            star.classList.remove("fav");
-                            star.textContent = "☆";
-                        }
-                    };
-                    setStar(Boolean(favoritesMap[keyId(it.id)]));
-
-                    star.addEventListener("click", async (e) => {
-                        e.stopPropagation();
-                        try {
-                            const resp = await api.fetchApi("/civitai_gallery/toggle_favorite", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ item: it }),
-                            });
-                            const data = await resp.json();
-                            const k = keyId(it.id);
-
-                            if (data.status === "added") {
-                                favoritesMap[k] = it;
-                                setStar(true);
-                                if (favoritesOnly) await reload(true);
-                            } else if (data.status === "removed") {
-                                delete favoritesMap[k];
-                                setStar(false);
-                                if (favoritesOnly) await reload(true);
-                            }
-                        } catch (err) {
-                            console.error("Favorite toggle failed:", err);
-                        }
-                    });
-
-                    const rightBox = document.createElement("div");
-                    rightBox.style.display = "flex";
-                    rightBox.style.alignItems = "center";
-                    rightBox.style.gap = "8px";
-                    rightBox.appendChild(star);
-                    rightBox.appendChild(open);
-
-                    meta.appendChild(left);
-                    meta.appendChild(rightBox);
-                    d.appendChild(meta);
-
-                    d.addEventListener("click", () => selectItem(it, d));
-                    requestAnimationFrame(() => d.classList.add("show"));
-                    return d;
-                };
-
-                const appendGrid = (items) => {
-                    const seen = new Set([...elGrid.querySelectorAll(".cg-card")].map((c) => c.dataset.selkey));
-                    const nodes = [];
-                    for (const it of items) {
-                        const key = `image:${keyId(it.id)}`;
-                        if (seen.has(key)) continue;
-                        const card = makeCard(it);
-                        nodes.push(card);
-                        seen.add(key);
-                    }
-                    if (nodes.length) elGrid.append(...nodes);
-                };
-
-                const selectItem = (item, cardEl) => {
-                    elGrid.querySelectorAll(".cg-card.selected").forEach((c) => c.classList.remove("selected"));
-                    cardEl.classList.add("selected");
-
-                    const meta = item.meta || {};
-                    const pos = meta.prompt || meta.Prompt || meta.positive || meta.textPrompt || "";
-                    const neg = meta.negativePrompt || meta.NegativePrompt || meta.negative || "";
-
-                    const imageOutIdx = 2;
-                    const imageConnected = Array.isArray(node.outputs?.[imageOutIdx]?.links) && node.outputs[imageOutIdx].links.length > 0;
-
-                    const payload = {
-                        item: { ...item, meta: { ...meta, prompt: pos || meta.prompt || "", negativePrompt: neg || meta.negativePrompt || "" } },
-                        download_image: !!imageConnected,
-                    };
-
-                    setHiddenSelectionPayload(payload);
-                };
-
-                const checkAndAutofill = async () => {
-                    if (!renderEnabled || !inView) return;
-                    if (!autofillArmed) return;
-
-                    let safety = 6;
-                    while (!loading && hasMore && nearBottom() && safety-- > 0) {
-                        await loadMore();
-                        if (!inView) break;
-                    }
-
-                    if (!nearBottom() || !hasMore || safety <= 0) {
-                        autofillArmed = false;
-                    }
-                };
-
-                const loadMoreServer = async () => {
-                    if (!renderEnabled || !inView || loading || !hasMore) return;
-                    loading = true;
-                    setStatus("Loading…");
-
-                    try {
-                        const data = await getJSON(makeUrlStream(cursor));
-                        const aggregated = Boolean(data?.metadata?.aggregated);
-
-                        let items = Array.isArray(data?.items) ? data.items : [];
-                        if (!aggregated) items = items.filter((it) => !serverFilteredOut(it));
-                        items = items.filter(matchesVideoMode);
-
-                        appendGrid(items);
-
-                        cursor = data?.metadata?.nextCursor ?? data?.metadata?.cursor ?? data?.metadata?.next ?? null;
-                        hasMore = !!cursor && items.length > 0;
-
-                        const ms = data?.metadata?.elapsedMs ?? "?";
-                        setStatus(hasMore ? `Loaded ${items.length} • more available (≈${ms}ms)` : `Loaded ${items.length} • end reached (≈${ms}ms)`);
-                    } catch (e) {
-                        console.error(e);
-                        hasMore = false;
-                        setStatus(`Error: ${e.message}`);
-                    } finally {
-                        loading = false;
-                        requestAnimationFrame(checkAndAutofill);
-                    }
-                };
-
-                const applyFavFiltersLocal = (arr) => {
-                    let out = arr.slice();
-                    out = out.filter(matchesVideoMode);
-                    if (hideNoPrompt) out = out.filter((it) => hasPositivePrompt(it));
-                    return out;
-                };
-
-                const loadMoreFavorites = async () => {
-                    if (!renderEnabled || !inView || loading || !hasMore) return;
-                    loading = true;
-                    setStatus("Loading favorites…");
-
-                    try {
-                        if (!favoritesArray.length) {
-                            if (!Object.keys(favoritesMap).length) favoritesMap = await getJSON("/civitai_gallery/get_all_favorites_data");
-                            favoritesArray = Object.values(favoritesMap || {});
-                        }
-
-                        const filtered = applyFavFiltersLocal(favoritesArray);
-                        const start = favOffset;
-                        const end = favOffset + batchSize();
-                        const slice = filtered.slice(start, end);
-
-                        appendGrid(slice);
-
-                        favOffset = end;
-                        hasMore = favOffset < filtered.length;
-
-                        setStatus(hasMore ? `Loaded ${slice.length} • ${filtered.length - favOffset} more` : `Loaded ${slice.length} • end reached`);
-                    } catch (e) {
-                        console.error(e);
-                        hasMore = false;
-                        setStatus(`Error: ${e.message}`);
-                    } finally {
-                        loading = false;
-                        requestAnimationFrame(checkAndAutofill);
-                    }
-                };
-
-                const loadMore = async () => {
-                    if (!renderEnabled || !inView) return;
-                    if (favoritesOnly) return loadMoreFavorites();
-                    return loadMoreServer();
-                };
-
-                const reload = async (resetToTop) => {
-                    if (!renderEnabled || !inView) return;
-                    if (loading) return;
-
-                    autofillArmed = true;
-                    userTouchedThisView = true;
-
-                    loading = true;
-                    setStatus("Loading…");
-
-                    try {
-                        favoritesArray = [];
-                        favOffset = 0;
-
-                        elGrid.replaceChildren();
-                        cursor = null;
-                        hasMore = true;
-
-                        if (resetToTop) {
-                            lastScrollTop = 0;
-                            if (elScroll) elScroll.scrollTop = 0;
-                            saveScrollTopNow();
-                        } else {
-                            restoreScrollTop();
-                        }
-
-                        await loadFavoritesMap();
-                        favoritesArray = Object.values(favoritesMap || {});
-
-                        await loadMore();
-                    } finally {
-                        loading = false;
-                        requestAnimationFrame(checkAndAutofill);
-                    }
-                };
-
-                const toggleBtn = (btn, flag) => btn.classList.toggle("active", flag);
-
-                const bindScroll = () => {
-                    if (_scrollHandlerBound) return;
-
-                    const markTouched = () => {
-                        if (restoringScroll) return;
-                        userTouchedThisView = true;
-                    };
-
-                    _scrollHandlerBound = () => {
-                        if (restoringScroll) return;
-                        markTouched();
-                        lastScrollTop = elScroll.scrollTop;
-                        saveScrollTop();
-                        if (nearBottom() && !loading && hasMore && renderEnabled && inView) loadMore();
-                    };
-
-                    elScroll.addEventListener("scroll", _scrollHandlerBound, { passive: true });
-                    elScroll.addEventListener("wheel", markTouched, { passive: true });
-                    elScroll.addEventListener("pointerdown", markTouched, { passive: true });
-                };
-
-                const unbindScroll = () => {
-                    if (!_scrollHandlerBound) return;
-                    elScroll.removeEventListener("scroll", _scrollHandlerBound);
-                    _scrollHandlerBound = null;
-                };
-
-                const setRenderState = async (on) => {
-                    renderEnabled = !!on;
-
-                    try {
-                        localStorage.setItem(LS_RENDER_KEY, renderEnabled ? "1" : "0");
-                    } catch { }
-
-                    try {
-                        cg.display_on = renderEnabled;
-                    } catch { }
-
-                    elBtnRender.classList.toggle("cg-render-on", renderEnabled);
-                    elBtnRender.classList.toggle("cg-render-off", !renderEnabled);
-                    elBtnRender.textContent = renderEnabled ? "Display: ON" : "Display: OFF";
-
-                    elScroll.classList.toggle("paused", !renderEnabled);
-                    root.querySelector(".cg-foot")?.classList.toggle("paused", !renderEnabled);
-
-                    if (!renderEnabled) {
-                        saveScrollTopNow();
-
-                        try {
-                            _ioSentinel?.disconnect();
-                        } catch { }
-                        try {
-                            _ioVideo?.disconnect();
-                        } catch { }
-
-                        unbindScroll();
-
-                        elGrid.querySelectorAll("video").forEach((v) => {
-                            try {
-                                v.pause();
-                            } catch { }
-                        });
-
-                        setStatus("");
-                        return;
-                    }
-
-                    setupObservers();
-                    bindScroll();
-                    restoreScrollTop();
-
-                    if (!cg.has_loaded_once) {
-                        cg.has_loaded_once = true;
-                        await reload(true);
-                    }
-                };
-
-                node.onResize = function (size) {
-                    if (size[0] < MIN_W) size[0] = MIN_W;
-                    if (size[1] < MIN_H) size[1] = MIN_H;
-                    requestAnimationFrame(checkAndAutofill);
-                    return size;
-                };
-
-                [elNSFW, elSort, elPeriod, elLimitSel].forEach((x) => x.addEventListener("change", () => reload(true)));
-                elTags.addEventListener("change", () => reload(true));
-                elRefresh.addEventListener("click", () => reload(true));
-                elSearch.addEventListener("click", () => reload(true));
-                elUser.addEventListener("keydown", (e) => e.key === "Enter" && reload(true));
-
-                elBtnVideo.addEventListener("click", () => {
-                    videosOnly = !videosOnly;
-                    toggleBtn(elBtnVideo, videosOnly);
-                    reload(true);
-                });
-
-                elBtnNoPrompt.addEventListener("click", () => {
-                    hideNoPrompt = !hideNoPrompt;
-                    toggleBtn(elBtnNoPrompt, hideNoPrompt);
-                    reload(true);
-                });
-
-                elBtnFavOnly.addEventListener("click", async () => {
-                    favoritesOnly = !favoritesOnly;
-                    toggleBtn(elBtnFavOnly, favoritesOnly);
-                    await reload(true);
-                });
-
-                elBtnRender.addEventListener("click", () => setRenderState(!renderEnabled));
-
-                const ro = new ResizeObserver(() => {
-                    const w = elScroll.clientWidth || root.clientWidth || 900;
-                    const target = Math.max(240, Math.min(360, Math.floor(w / Math.ceil(w / 280))));
-                    elGrid.style.setProperty("--colw", `${target}px`);
-                    requestAnimationFrame(checkAndAutofill);
-                });
-                ro.observe(elScroll);
-
-                const _prevOnRemoved = node.onRemoved;
-                node.onRemoved = function () {
-                    saveScrollTopNow();
-                    stopViewportWatch();
-                    try {
-                        _ioSentinel?.disconnect();
-                    } catch { }
-                    try {
-                        _ioVideo?.disconnect();
-                    } catch { }
-                    try {
-                        ro?.disconnect();
-                    } catch { }
-                    try {
-                        unbindScroll();
-                    } catch { }
-                    return _prevOnRemoved?.apply(this, arguments);
-                };
-
-                (async () => {
-                    toggleBtn(elBtnVideo, videosOnly);
-                    toggleBtn(elBtnNoPrompt, hideNoPrompt);
-                    toggleBtn(elBtnFavOnly, favoritesOnly);
-                    setStatus("");
-
-                    let saved = null;
-                    try {
-                        saved = localStorage.getItem(LS_RENDER_KEY);
-                    } catch { }
-
-                    const propVal = typeof cg.display_on === "boolean" ? cg.display_on : null;
-                    const initOn = saved == null ? (propVal == null ? true : propVal) : saved === "1";
-
-                    await setRenderState(initOn);
-                })();
-
-                return r;
-            };
-        },
+            }
+            if (current) {
+                restoreTop = 0;
+                scroll.scrollTop = 0;
+                state(node).scroll_top = 0;
+            }
+            clearCards();
+            const pageChanged = current > 0 && current !== number;
+            current = number;
+            state(node).pagination = { page: number, starts: [...starts], last };
+            if (pageChanged) dirty();
+            const count = append(data.items);
+            const pageLabel = "Page " + number + (last ? " / " + last : "") + " (" + count + ")";
+            status.textContent = repeated ? "The server returned a repeated page." : pageLabel;
+            if (!repeated && !count && filters.hide_no_prompt) {
+                status.textContent = following == null ? "No images or videos with a public prompt match these filters." :
+                    "No public prompt in this batch. Use the next page to keep searching.";
+            }
+        } catch (error) {
+            if (request !== controller) return;
+            retry.textContent = "Retry";
+            retry.hidden = false;
+            status.textContent = "Error: " + error.message;
+        } finally {
+            if (controller === request) {
+                request = null;
+                renderPager();
+                schedule();
+            }
+        }
+    }
+    find("first").addEventListener("click", () => loadPage(1));
+    find("prev").addEventListener("click", () => loadPage(current - 1));
+    find("next").addEventListener("click", () => loadPage(current + 1));
+
+    function cancel() {
+        request?.abort();
+        request = null;
+        if (frame) cancelAnimationFrame(frame);
+        frame = 0;
+    }
+
+    function clearCards() {
+        for (const page of pages.values()) {
+            pageObserver.unobserve(page.element);
+            unmount(page);
+        }
+        pages.clear();
+        seen.clear();
+        currentCard = null;
+        grid.replaceChildren();
+    }
+
+    function reset(top) {
+        cancel();
+        clearCards();
+        const cg = state(node);
+        if (top) delete cg.pagination;
+        const saved = cg.pagination;
+        starts = Array.isArray(saved?.starts) && saved.starts[0] === null &&
+            saved.starts.slice(1).every(token => typeof token === "string" || Number.isFinite(token))
+            ? [...saved.starts] : [null];
+        last = Number.isSafeInteger(saved?.last) && saved.last > 0 ? saved.last : null;
+        const available = filters.favorites_only ? (last || 1) : starts.length;
+        retryPage = Number.isSafeInteger(saved?.page) && saved.page > 0 && saved.page <= available ? saved.page : 1;
+        current = 0;
+        renderPager();
+        if (top) {
+            restoreTop = 0;
+            state(node).scroll_top = 0;
+        }
+        scroll.scrollTop = 0;
+        retry.hidden = true;
+        status.textContent = "";
+        if (enabled && visible && !removed) {
+            void loadIds();
+            void loadPage(retryPage);
+        }
+    }
+
+    function pause() {
+        cancel();
+        restoreTop = restoreTop || state(node).scroll_top || 0;
+        idsRequest?.abort();
+        idsRequest = null;
+        for (const page of pages.values()) unmount(page);
+        pageObserver.disconnect();
+        videoObserver.disconnect();
+    }
+
+    function resume() {
+        if (!visible || !enabled || removed) return;
+        for (const page of pages.values()) pageObserver.observe(page.element);
+        void loadIds();
+        if (!current) void loadPage(retryPage);
+        renderPager();
+        schedule();
+    }
+
+    const viewport = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+            if (entry.target !== root || visible === entry.isIntersecting || removed) continue;
+            visible = entry.isIntersecting;
+            if (visible) resume();
+            else pause();
+        }
     });
-})();
+    viewport.observe(root);
+
+    function display(on) {
+        enabled = on;
+        if (!on) pause();
+        clearPreviews.disabled = !on && pages.size === 0;
+        renderButton.classList.toggle("cg-render-on", on);
+        renderButton.classList.toggle("cg-render-off", !on);
+        renderButton.setAttribute("aria-pressed", String(on));
+        renderButton.textContent = on ? "Display: ON" : "Display: OFF";
+        scroll.classList.toggle("paused", !on);
+        foot.classList.toggle("paused", !on);
+        if (on) resume();
+    }
+
+    function renderToggles() {
+        model.disabled = modelQuery.disabled = modelButton.disabled = filters.favorites_only;
+        find("model-hint").hidden = !filters.favorites_only;
+        if (filters.favorites_only) cancelModelSearch();
+        for (const [key, button] of Object.entries(toggles)) {
+            button.classList.toggle("active", filters[key]);
+            button.setAttribute("aria-pressed", String(filters[key]));
+        }
+    }
+
+    function setThumbnailWidth(value) {
+        thumb.value = ["160", "220", "280", "400"].includes(value) ? value : "280";
+        grid.style.setProperty("--cg-thumb-width", thumb.value + "px");
+        for (const page of pages.values()) {
+            if (!page.mounted) page.element.style.height = estimateHeight(page.items) + "px";
+        }
+        schedule();
+    }
+
+    thumb.addEventListener("change", () => {
+        setThumbnailWidth(thumb.value);
+        state(node).thumbnail_width = thumb.value;
+        dirty();
+    });
+
+    function modelOptions(items = []) {
+        const selected = state(node).model;
+        model.replaceChildren();
+        function option(value, label) {
+            const element = document.createElement("option");
+            element.value = value;
+            element.textContent = label;
+            model.appendChild(element);
+        }
+        option("", "All models");
+        if (selected?.id) option(selected.id, selected.label);
+        for (const item of items) {
+            if (String(item.id) !== selected?.id) option(String(item.id), item.name + " (" + item.type + " #" + item.id + ")");
+        }
+        model.value = selected?.id || "";
+        find("tab-models").classList.toggle("cg-has-model", Boolean(selected?.id));
+        find("tab-models").title = selected?.label || "Search by checkpoint or LoRA name";
+    }
+
+    function cancelModelSearch() {
+        modelRequest?.abort();
+        modelRequest = null;
+        modelStatus.textContent = "";
+    }
+
+    async function searchModels() {
+        cancelModelSearch();
+        const query = modelQuery.value.trim();
+        modelOptions();
+        if (!query || filters.favorites_only) return;
+        const controller = modelRequest = new AbortController();
+        modelStatus.textContent = "Searching...";
+        try {
+            const data = await jsonRequest("/civitai_gallery/models?" + new URLSearchParams({ query }), { signal: controller.signal });
+            if (controller !== modelRequest) return;
+            modelOptions(data.items);
+            modelStatus.textContent = data.items.length ? "Choose a model." : "No models found.";
+        } catch (error) {
+            if (controller === modelRequest) modelStatus.textContent = error.message;
+        } finally {
+            if (controller === modelRequest) modelRequest = null;
+        }
+    }
+
+    find("clear-model").addEventListener("click", () => {
+        cancelModelSearch();
+        modelQuery.value = "";
+        const selected = state(node).model;
+        state(node).model = null;
+        modelOptions();
+        if (selected) applyFilters();
+    });
+    resolution.addEventListener("change", () => {
+        state(node).preview_resolution = resolution.value;
+        for (const page of pages.values()) {
+            if (page.mounted) { unmount(page); mount(page); }
+        }
+        dirty();
+    });
+
+    modelButton.addEventListener("click", searchModels);
+    modelQuery.addEventListener("input", () => { cancelModelSearch(); modelOptions(); });
+    modelQuery.addEventListener("keydown", event => {
+        if (event.key === "Enter") { event.preventDefault(); searchModels(); }
+    });
+    model.addEventListener("change", () => {
+        state(node).model = model.value ? { id: model.value, label: model.selectedOptions[0].textContent } : null;
+        modelStatus.textContent = "";
+        applyFilters();
+    });
+
+    function configure(savedSelection) {
+        const cg = state(node);
+        showPanel(panels.includes(cg.panel) ? cg.panel : "filters");
+        cancelModelSearch();
+        modelQuery.value = "";
+        modelOptions();
+        resolution.value = ["256", "768", "1024", "original"].includes(cg.preview_resolution) ? cg.preview_resolution : "512";
+        setThumbnailWidth(cg.thumbnail_width);
+        const selection = galleryWidget(node);
+        if (typeof savedSelection === "string") selection.value = savedSelection;
+        else if (typeof cg.selection_data === "string") selection.value = cg.selection_data;
+        delete cg.selection_data;
+        try {
+            showSelection(JSON.parse(selection.value || "{}")?.item?.id);
+        } catch { showSelection(null); }
+        filters = galleryOptions(node);
+        for (const [key, input] of Object.entries(controls)) {
+            input.value = filters[key];
+            if (!input.value && key !== "username" && key !== "tags" && input.options?.length) {
+                input.selectedIndex = 0;
+                filters[key] = input.value;
+            }
+        }
+        renderToggles();
+        restoreTop = Number.isFinite(cg.scroll_top) ? cg.scroll_top : 0;
+        enabled = cg.display_on !== false;
+        reset(false);
+        display(enabled);
+    }
+
+    function applyFilters() {
+        for (const [key, input] of Object.entries(controls)) filters[key] = input.value.trim();
+        state(node).filters = { ...filters };
+        renderToggles();
+        reset(true);
+        dirty();
+    }
+    for (const [key, input] of Object.entries(controls)) {
+        if (key !== "username") input.addEventListener("change", applyFilters);
+    }
+    controls.username.addEventListener("keydown", e => { if (e.key === "Enter") applyFilters(); });
+    find("search").addEventListener("click", applyFilters);
+    for (const [key, button] of Object.entries(toggles)) {
+        button.addEventListener("click", () => {
+            filters[key] = !filters[key];
+            applyFilters();
+        });
+    }
+    find("refresh").addEventListener("click", () => {
+        favoriteIds = null;
+        idsRequest?.abort();
+        idsRequest = null;
+        applyFilters();
+    });
+    retry.addEventListener("click", () => {
+        void loadPage(retryPage);
+    });
+    clearPreviews.addEventListener("click", () => {
+        state(node).display_on = false;
+        display(false);
+        clearCards();
+        retryPage = current || retryPage;
+        current = 0;
+        favoriteIds = null;
+        changedIds.clear();
+        favoriteStatus.textContent = "";
+        clearPreviews.disabled = true;
+        dirty();
+    });
+    renderButton.addEventListener("click", () => {
+        state(node).display_on = !enabled;
+        display(!enabled);
+        dirty();
+    });
+
+    scroll.addEventListener("scroll", () => {
+        if (!enabled || !visible || removed) return;
+        if (!restoreTop) state(node).scroll_top = scroll.scrollTop;
+        schedule();
+    }, { passive: true });
+    const stopRestoring = () => { restoreTop = 0; };
+    scroll.addEventListener("wheel", stopRestoring, { passive: true });
+    scroll.addEventListener("pointerdown", stopRestoring, { passive: true });
+    const resize = new ResizeObserver(schedule);
+    resize.observe(scroll);
+    const previousResize = node.onResize;
+    node.onResize = function (size) {
+        size[0] = Math.max(720, size[0]);
+        size[1] = Math.max(420, size[1]);
+        return previousResize?.call(this, size) ?? size;
+    };
+
+    function dispose() {
+        removed = true;
+        cancelModelSearch();
+        pause();
+        viewport.disconnect();
+        resize.disconnect();
+        favoriteChanges.removeEventListener("change", favoriteChanged);
+        pages.clear();
+        seen.clear();
+        stars.clear();
+        grid.replaceChildren();
+    }
+    configure();
+    return { configure, dispose };
+}
+
+app.registerExtension({
+    name: EXT_NAME,
+    beforeRegisterNodeDef(nodeType, nodeData) {
+        if ((nodeType.comfyClass || nodeData.name) !== TARGET_CLASS) return;
+        const proto = nodeType.prototype;
+        const create = proto.onNodeCreated, configure = proto.configure, remove = proto.onRemoved;
+        proto.onNodeCreated = function (...args) {
+            const result = create?.apply(this, args);
+            const cg = state(this);
+            if (!cg.colored_once) {
+                this.color = "#000000";
+                this.bgcolor = "#0b0b0b";
+                this.boxcolor = "#1e1e1e";
+                this.title_color = "#ffffff";
+                cg.colored_once = true;
+            }
+            galleryWidget(this);
+            galleries.set(this, createGallery(this));
+            return result;
+        };
+        proto.configure = function (data, ...args) {
+            if (data?.properties) {
+                data = { ...data, properties: sanitizeProxyWidgets({ ...data.properties }) };
+                if (data.properties.__cg) data.properties.__cg = { ...data.properties.__cg };
+            }
+            const selection = data?.properties?.__cg?.selection_data;
+            const result = configure?.call(this, data, ...args);
+            galleries.get(this)?.configure(selection);
+            const size = data?.size;
+            if (size && Number.isFinite(size[0]) && Number.isFinite(size[1]) &&
+                size[0] >= 720 && size[1] >= 420 && (this.size[0] !== size[0] || this.size[1] !== size[1])) {
+                this.size = [size[0], size[1]];
+            }
+            return result;
+        };
+        proto.onRemoved = function (...args) {
+            galleries.get(this)?.dispose();
+            galleries.delete(this);
+            return remove?.apply(this, args);
+        };
+    },
+});

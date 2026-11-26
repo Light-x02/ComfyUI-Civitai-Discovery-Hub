@@ -3,14 +3,13 @@
 
 # ----- SECTION: Imports -----
 import re
-from typing_extensions import override
-from comfy_api.latest import ComfyExtension, io as comfy_io
+from comfy_api.latest import io as comfy_io
 
 
 # ----- SECTION: Node (V3) -----
 class ClearLoraName(comfy_io.ComfyNode):
-    # Regex robuste: <lora: ... > (espaces optionnels, contenu libre jusqu'à '>')
-    _LORA_TAG_RE = re.compile(r"<\s*lora\s*:[^>]*>", re.IGNORECASE)
+    _TAG = r"<[ \t]*lora[ \t]*:[^<>\r\n]*>"
+    _LORA_TAGS = re.compile(rf"{_TAG}(?:[ \t]*(?:,[ \t]*)?{_TAG})*", re.IGNORECASE)
 
     @classmethod
     def define_schema(cls) -> comfy_io.Schema:
@@ -47,23 +46,30 @@ class ClearLoraName(comfy_io.ComfyNode):
             ],
         )
 
-    @staticmethod
-    def _strip_lora_tags(text: str) -> str:
-        if not isinstance(text, str) or not text:
-            return ""
-        # 1) Supprimer tous les tags <lora:...>
-        cleaned = ClearLoraName._LORA_TAG_RE.sub(" ", text)
-        # 2) Réduire les espaces multiples
-        cleaned = re.sub(r"\s{2,}", " ", cleaned)
-        # 3) Nettoyer les espaces avant la ponctuation
-        cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
-        # 4) Trim final
-        return cleaned.strip()
-
     @classmethod
-    def is_changed(cls, enabled: bool = True, positive_prompt: str = "", negative_prompt: str = "", **kwargs):
-        # Recalcule dès qu'une entrée change
-        return (bool(enabled), str(positive_prompt or ""), str(negative_prompt or ""))
+    def _strip_lora_tags(cls, text: str) -> str:
+        parts = cls._LORA_TAGS.split(text)
+        for i in range(len(parts) - 1):
+            before, after = parts[i], parts[i + 1]
+            left, right = before.rstrip(" \t"), after.lstrip(" \t")
+            line_start = not left or left.endswith(("\r", "\n"))
+            line_end = not right or right.startswith(("\r", "\n"))
+            if line_start:
+                if line_end:
+                    parts[i] = left
+                parts[i + 1] = right.removeprefix(",").lstrip(" \t")
+            elif line_end or right.startswith(","):
+                parts[i] = left.removesuffix(",").rstrip(" \t")
+                parts[i + 1] = right
+            elif right[0] in ".)]}" or left[-1] in "([{":
+                parts[i], parts[i + 1] = left, right
+            else:
+                # Keep existing horizontal spacing on one side of the deleted tags.
+                space = before[len(left):] or after[:len(after) - len(right)]
+                if not space and left[-1].isalnum() and right[0].isalnum():
+                    space = " "
+                parts[i], parts[i + 1] = left + space, right
+        return "".join(parts)
 
     @classmethod
     def execute(cls, enabled: bool = True, positive_prompt: str = "", negative_prompt: str = ""):
@@ -76,14 +82,3 @@ class ClearLoraName(comfy_io.ComfyNode):
         pos = cls._strip_lora_tags(pos_in)
         neg = cls._strip_lora_tags(neg_in)
         return (pos, neg)
-
-
-# ----- SECTION: Entry Point (comfy_entrypoint) -----
-class ClearLoraNameExtension(ComfyExtension):
-    @override
-    async def get_node_list(self) -> list[type[comfy_io.ComfyNode]]:
-        return [ClearLoraName]
-
-
-async def comfy_entrypoint() -> ComfyExtension:
-    return ClearLoraNameExtension()

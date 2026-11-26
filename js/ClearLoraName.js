@@ -12,16 +12,10 @@ import { app } from "/scripts/app.js";
     const MIN_W = 420;
     const MIN_H = 220;
 
-    const lsKey = (node) => {
-        const name = node?.title || `id${node?.id || "0"}`;
-        const klass = node?.comfyClass || "ClearLoraName";
-        return `cln:size:${klass}:${name}`;
-    };
-
-    const clampSize = (arr) => {
-        if (!Array.isArray(arr) || arr.length < 2) return null;
-        return [Math.max(MIN_W, +arr[0] || MIN_W), Math.max(MIN_H, +arr[1] || MIN_H)];
-    };
+    const clampSize = (size) => [
+        Math.max(MIN_W, size?.[0] || 0),
+        Math.max(MIN_H, size?.[1] || 0),
+    ];
 
     app.registerExtension({
         name: EXT_NAME,
@@ -37,35 +31,22 @@ import { app } from "/scripts/app.js";
                 const r = _onNodeCreated?.apply(this, arguments);
                 const node = this;
 
-                node.properties = node.properties || {};
-                node.properties.__cln = node.properties.__cln || {};
+                if (node.widgets?.some((w) => w.name === "clear_lora_name_ui")) return r;
 
-                if (!node.properties.__cln.themed_once) {
-                    node.color = "#000000";
-                    node.bgcolor = "#0b0b0b";
-                    node.boxcolor = "#1e1e1e";
-                    node.title_color = "#ffffff";
-                    node.properties.__cln.themed_once = true;
-                    node.setDirtyCanvas(true, true);
-                }
-
+                node.color = "#000000";
+                node.bgcolor = "#0b0b0b";
+                node.boxcolor = "#1e1e1e";
+                node.title_color = "#ffffff";
                 node.flags = node.flags || {};
                 node.flags.allow_resize = true;
                 node.resizable = true;
+                node.size = clampSize(node.size);
 
-                let restored =
-                    clampSize(node.properties.__cln.saved_size) ||
-                    clampSize(JSON.parse(localStorage.getItem(lsKey(node)) || "null")) ||
-                    clampSize(node.size) ||
-                    [MIN_W, MIN_H];
-                node.size = restored;
+                const uid = `cln-${Math.random().toString(36).slice(2, 9)}`;
+                const root = document.createElement("div");
+                root.id = uid;
 
-                if (!node.properties.__cln.dom_once) {
-                    const uid = `cln-${Math.random().toString(36).slice(2, 9)}`;
-                    const root = document.createElement("div");
-                    root.id = uid;
-
-                    root.innerHTML = `
+                root.innerHTML = `
 <style>
 #${uid}{
   width:100%; height:100%; box-sizing:border-box; color:var(--node-text-color);
@@ -120,7 +101,7 @@ import { app } from "/scripts/app.js";
     <span class="dot"></span>
     <div class="title">🧹 Clear LoRA Name</div>
     <div class="sub">Neon UI • Clean & minimal</div>
-    <button class="cln-toggle">On</button>
+    <button type="button" class="cln-toggle" aria-label="Remove LoRA tags">On</button>
   </div>
   <div class="cln-body">
     <div class="tips">
@@ -129,84 +110,92 @@ import { app } from "/scripts/app.js";
     </div>
   </div>
 </div>
-                    `;
+                `;
 
-                    const domw = node.addDOMWidget("clear_lora_name_ui", "div", root, {});
-                    domw.computeSize = function (w) {
-                        const curW = Array.isArray(node.size) ? (node.size[0] ?? MIN_W) : MIN_W;
-                        const width = Math.max(MIN_W - 20, (w ?? curW) - 20);
-                        const wrap = root.querySelector(".cln-wrap");
-                        const EXTRA = 24;
-                        let natural = 140;
-                        if (wrap) {
-                            const prevH = wrap.style.height;
-                            wrap.style.height = "auto";
-                            natural = Math.ceil(wrap.scrollHeight);
-                            wrap.style.height = prevH || "";
-                        }
-                        const height = Math.max(150, natural + EXTRA);
-                        return [width, height];
-                    };
+                const domw = node.addDOMWidget("clear_lora_name_ui", "div", root, { serialize: false });
+                domw.computeSize = function (w) {
+                    const curW = node.size?.[0] ?? MIN_W;
+                    const width = Math.max(MIN_W - 20, (w ?? curW) - 20);
+                    const wrap = root.querySelector(".cln-wrap");
+                    const EXTRA = 24;
+                    let natural = 140;
+                    if (wrap) {
+                        const prevH = wrap.style.height;
+                        wrap.style.height = "auto";
+                        natural = Math.ceil(wrap.scrollHeight);
+                        wrap.style.height = prevH || "";
+                    }
+                    const height = Math.max(150, natural + EXTRA);
+                    return [width, height];
+                };
 
-                    const saveSize = () => {
-                        const sz = clampSize(node.size) || [MIN_W, MIN_H];
-                        node.properties.__cln.saved_size = sz;
-                        try {
-                            localStorage.setItem(lsKey(node), JSON.stringify(sz));
-                        } catch { }
-                    };
+                const _onResize = node.onResize;
+                node.onResize = function (size) {
+                    const requested = _onResize?.call(this, size) || size;
+                    const next = clampSize(requested);
+                    if (node.size[0] !== next[0] || node.size[1] !== next[1]) node.size = next;
+                    return next;
+                };
 
-                    const _onResize = node.onResize;
-                    node.onResize = function (size) {
-                        let s = _onResize ? _onResize.call(this, size) : size;
-                        if (!Array.isArray(s) || s.length < 2) s = Array.isArray(size) ? size.slice() : [MIN_W, MIN_H];
-                        s[0] = Math.max(MIN_W, s[0] ?? MIN_W);
-                        s[1] = Math.max(MIN_H, s[1] ?? MIN_H);
-                        node.size = s;
-                        saveSize();
-                        return s;
-                    };
+                const btn = root.querySelector(".cln-toggle");
 
-                    const btn = root.querySelector(".cln-toggle");
+                const hideEnabledWidget = () => {
+                    const w = node.widgets?.find((ww) => ww.name === "enabled");
+                    if (!w) return null;
+                    w.hidden = true;
+                    w.draw = function () { };
+                    w.computeSize = function () { return [0, 0]; };
+                    node.setDirtyCanvas(true, true);
+                    return w;
+                };
 
-                    const hideEnabledWidget = () => {
-                        const w = node.widgets?.find((ww) => ww.name === "enabled");
-                        if (!w) return null;
-                        w.draw = function () { };
-                        w.computeSize = function () { return [0, 0]; };
-                        w.serializeValue = function () { return this.value; };
-                        node.setDirtyCanvas(true, true);
-                        return w;
-                    };
+                let wEnabled = hideEnabledWidget();
 
-                    let wEnabled = hideEnabledWidget();
+                const refreshEnabledRef = () => {
+                    const w = node.widgets?.find((ww) => ww.name === "enabled");
+                    if (w !== wEnabled) wEnabled = hideEnabledWidget();
+                };
 
-                    const refreshEnabledRef = () => {
-                        const w = node.widgets?.find((ww) => ww.name === "enabled");
-                        if (w && w !== wEnabled) wEnabled = hideEnabledWidget() || w;
-                    };
+                const renderBtn = () => {
+                    refreshEnabledRef();
+                    btn.disabled = !wEnabled;
+                    const on = Boolean(wEnabled?.value ?? true);
+                    btn.textContent = on ? "On" : "Off";
+                    btn.setAttribute("aria-pressed", String(on));
+                    btn.classList.toggle("on", on);
+                    btn.classList.toggle("off", !on);
+                };
 
-                    const renderBtn = () => {
-                        refreshEnabledRef();
-                        const on = Boolean(wEnabled?.value ?? true);
-                        btn.textContent = on ? "On" : "Off";
-                        btn.classList.toggle("on", on);
-                        btn.classList.toggle("off", !on);
-                    };
-
-                    btn.addEventListener("click", () => {
-                        refreshEnabledRef();
-                        if (!wEnabled) return;
-                        wEnabled.value = !Boolean(wEnabled.value);
-                        renderBtn();
-                        node.setDirtyCanvas(true, true);
-                    });
-
+                btn.addEventListener("click", (event) => {
+                    refreshEnabledRef();
+                    if (!wEnabled) return;
+                    node.graph?.beforeChange();
+                    const value = !Boolean(wEnabled.value);
+                    if (wEnabled.setValue && app.canvas) {
+                        wEnabled.setValue(value, { e: event, node, canvas: app.canvas });
+                    } else {
+                        wEnabled.value = value;
+                        wEnabled.callback?.(value);
+                    }
+                    node.graph?.afterChange();
                     renderBtn();
-                    saveSize();
+                    node.setDirtyCanvas(true, true);
+                });
 
-                    node.properties.__cln.dom_once = true;
-                }
+                const _onWidgetChanged = node.onWidgetChanged;
+                node.onWidgetChanged = function (name, ...args) {
+                    const result = _onWidgetChanged?.call(this, name, ...args);
+                    if (name === "enabled") renderBtn();
+                    return result;
+                };
+
+                const _onConfigure = node.onConfigure;
+                node.onConfigure = function (...args) {
+                    const result = _onConfigure?.apply(this, args);
+                    renderBtn();
+                    return result;
+                };
+                renderBtn();
 
                 return r;
             };

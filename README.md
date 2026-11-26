@@ -2,51 +2,74 @@
 
 [☕ Support on Ko-fi](https://ko-fi.com/light_x02)
 
----
-<details>
-<summary>Changelog</summary>
-
-### 2025-12-16 — Major Update (V3 + UI + Stability)
-
-#### ✅ V3 Migration (code fully rewritten)
-- Migrated the **🖼️ Civitai Discovery Hub** node to **V3**.
-- For this migration, **all code was rewritten** (Python + JavaScript) to be cleaner, V3-compatible, and more robust.
-
-#### 🔧 Universal Loader (V3)
-- The `__init__.py` was designed as a **universal V3 loader**: it automatically detects **all Python files** in the folder and loads them, without needing manual imports.
-
-#### 🚀 Stability & Performance
-- Fixed a bug where the gallery could shift / “move by itself”: if you scrolled down, then panned the workflow view and came back to the node, the list would unexpectedly re-align.
-- Fixed a related issue: when returning to the node after moving around the workflow, it could **append already-loaded images again**, which could eventually slow down ComfyUI.
-
-✅ The gallery now stays **exactly** at the same position as long as you don’t scroll, and it no longer duplicates content when you move around the workflow.
-</details>
-
----
-
 # 📜 ComfyUI-Civitai-Discovery-Hub
 
 ![ComfyUI](https://img.shields.io/badge/ComfyUI-custom%20nodes-5a67d8)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/status-active-brightgreen)
 
-> Browse the **Civitai** gallery directly inside **ComfyUI**: enjoy infinite scrolling, advanced filters (including **NSFW**), favorites management, **videos only** mode, and direct integration of prompts, metadata, and images/videos into your workflows.
+> Browse Civitai images and videos inside ComfyUI, save favorites, and send prompts, metadata and a still image to your workflow.
 
 - **GitHub**: [https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub](https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub)
 - **Node name in ComfyUI**: **Civitai Discovery Hub**
 
-![comfyui_civitai_gallery_001](assets/062107.png)
+## Changelog
+
+### 1.6.0 (November 26, 2026)
+
+#### Gallery and navigation
+
+- The gallery now opens in pages of 24, 50, 100 or 150 items. Use the first, previous, numbered and next buttons below the cards to move between pages. Changing the search filters starts a new result set on page 1.
+- Switching workflow tabs or reopening a saved workflow restores the active page, filters, control panel and node dimensions. Each gallery keeps its own settings and selection.
+- The toolbar groups controls under **Filters**, **Model search** and **View**. Favorites, refresh and display controls are accessible from all three panels.
+- Search for a checkpoint or LoRA by name, then choose a result to see its online gallery. The clear button cancels a pending search and removes the model filter.
+- Fixed empty results with **With prompt**. The gallery requests public generation metadata, recognizes more positive-prompt formats and follows continuation pages when a batch contains only items without a positive prompt.
+
+#### Preview quality and memory
+
+- Four thumbnail sizes control the card layout. A separate resolution setting requests 256, 512 (default), 768 or 1024 px previews, or the original URL. Signed and non-resizable URLs are kept intact. Preview quality only applies to browsing.
+- Gallery media loads near the visible area. **Clear previews** cancels pending gallery loads, unloads images and videos, releases cached page data and turns **Display** off. Turn it back on to reopen the same page. This keeps the selected workflow item and saved favorites.
+- The image output downloads the selected original only when connected and produces an RGB image or the first frame of a video. Media decoding uses less temporary memory and enforces limits of 64 MiB per image, 128 MiB per video and 32 megapixels per decoded frame.
+
+#### Favorites and workflows
+
+- Each ComfyUI profile now keeps its favorites in SQLite. Date-sorted pages use an index, and favorite changes are committed transactionally. A failed save is reported in the gallery.
+- On the first run in single-user mode, the Hub imports the old `civitai_favorites.json` and keeps the source file. Multi-user installations give each profile its own collection.
+- **Clear LoRA Name** handles consecutive tags and mixed-case spellings, keeps prompt line breaks and passes both prompts through when disabled. The workflow guide shows how to connect the prompt, image and JSON outputs.
+- The two nodes are registered explicitly. GitHub runs the Python and JavaScript regression suites before publishing. The Registry package excludes test files and GitHub workflow configuration.
+
+After updating, restart ComfyUI and reload the browser tab to load the new interface.
+
+<details>
+<summary>1.5.0 (December 16, 2025) &middot; V3 migration and gallery stability</summary>
+
+#### ✅ V3 Migration (code fully rewritten)
+- Migrated the **🖼️ Civitai Discovery Hub** node to **V3**.
+- For this migration, **all code was rewritten** (Python + JavaScript) to be cleaner, V3-compatible, and more robust.
+
+#### 🔧 Universal Loader (V3)
+- Introduced automatic discovery of Python modules.
+
+#### 🚀 Stability & Performance
+- Fixed a bug where the gallery could shift / “move by itself”: if you scrolled down, then panned the workflow view and came back to the node, the list would unexpectedly re-align.
+- Fixed a related issue: when returning to the node after moving around the workflow, it could **append already-loaded images again**, which could eventually slow down ComfyUI.
+
+✅ The gallery now stays **exactly** at the same position as long as you don’t scroll, and it no longer duplicates content when you move around the workflow.
+
+![Gallery in version 1.5.0](assets/062107.png)
+
+</details>
 
 ---
 
 ## ✨ Main Features
 
-- **Infinite scrolling**: automatically loads more items when reaching the bottom, with no limit.
+- **Page navigation** uses the buttons below the gallery. The workflow remembers the active page when switching tabs. Changing filters starts a new search on page 1.
 - **Advanced filters**: NSFW, sort (Newest / Most Reactions / Most Comments), period (Day / Week / Month / Year / AllTime), tags, user.
 - **“Videos only” mode**: display only videos.
-- **"Hide no-prompt"**: exclude content without positive prompts.
+- **With prompt**: exclude content without positive prompts.
 - **Favorites**: add/remove favorites (★) and switch to **Favorites only** view.
-- **Workflow outputs**: positive/negative prompts, JSON metadata, selected image/video.
+- **Workflow outputs** provide positive and negative prompts, JSON metadata and an RGB image. Selecting a video provides its first frame.
 - **Modern UI**: adaptive masonry grid, polished design, real-time loading status.
 
 ---
@@ -55,71 +78,71 @@
 
 ### Method 1: Install via ComfyUI Manager
 
-2. Go to the **Custom Nodes** section in the interface.
-3. Search for **"ComfyUI-Civitai-Discovery-Hub"** and install it directly from the ComfyUI Manager.
-4. **Restart ComfyUI**  
-   Restart ComfyUI to load the node.
+1. Open **Custom Nodes** in ComfyUI Manager.
+2. Search for **ComfyUI-Civitai-Discovery-Hub** and install the package.
+3. Restart ComfyUI and reload the browser tab.
 
-### Method 2: Clone the Repository
-1. Open a terminal or command prompt.
-2. Run the following command to clone the repository:
+### Method 2: Clone the repository
+
+1. Open a terminal in your ComfyUI `custom_nodes` directory.
+2. Clone the extension.
+
    ```bash
    git clone https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub.git
    ```
-3. **Restart ComfyUI**  
-   Once the files are in place, restart ComfyUI to load the node.
+
+3. Restart ComfyUI and reload the browser tab. The pack registers **Civitai Discovery Hub** and **Clear LoRA Name**.
 
 ---
 
 ## 🚀 Usage in a workflow
 
-Node outputs:
+Add **Civitai Discovery Hub**, select a card, then connect the outputs you need.
 
-- **Positive Prompt** *(STRING)*
-- **Negative Prompt** *(STRING)*
-- **Image** *(IMAGE tensor, downloaded if a connection is active)*
-- **Info** *(STRING, formatted JSON metadata)*
+| Output | Type | Example connection |
+| --- | --- | --- |
+| `positive_prompt` | STRING | **Clear LoRA Name** → **CLIP Text Encode** (positive conditioning) |
+| `negative_prompt` | STRING | A second **CLIP Text Encode** (negative conditioning) |
+| `image` | IMAGE | **Preview Image** for the photo or the first frame of a video |
+| `info` | STRING | A text viewer for the remaining generation metadata as formatted JSON |
 
-💡 **Tip**: Connect the **Image** output only if you want the preview to be downloaded as a tensor. This saves resources when you don’t need it.
+To connect a string to **CLIP Text Encode**, convert its text widget to an input if your frontend displays it as a text field. Queue the workflow to execute the connected branch.
+
+The workflow downloads the selected media when the **Image** output is connected. Image and video downloads are restricted to approved Civitai hosts. The limits are 64 MiB per image, 128 MiB per video, and 32 megapixels per decoded frame. Browsing the gallery also loads thumbnails in the browser.
+
+Favorites are stored in the current ComfyUI profile, under `civitai-discovery-hub/favorites.sqlite3`. On first use in single-user mode, an existing `civitai_favorites.json` in the extension folder is imported and the original is kept. In multi-user mode each profile starts with its own collection. If the old JSON is unreadable, the Hub reports an error and waits for it to be repaired before importing it.
+
+In **Favorites only**, the period uses the media's publication date, and reaction and comment counts reflect the last saved item. The tag filter uses Civitai tag IDs saved with the item. Older favorites can lack these IDs.
 
 ---
 
 ## 🖱️ Interface & Controls
 
-### Control Bar
+### Control bar
 
-- **NSFW**: `None | Soft | Mature | X`
-- **Sort**: `Newest | Most Reactions | Most Comments`
-- **Period**: `AllTime | Year | Month | Week | Day`
-- **Tags**: list of organized tags
-- **Username**: filter by user
-- **Apply**: apply filters
-- **Batch**: `24 | 50 | 100 | 150` (batch size)
-- **Videos only**: display only videos
-- **Hide no-prompt**: hide content without prompts
-- **Favorites only**: show only favorites
-- **Refresh**: reload results
+- **Filters** includes content rating, sort order, period, tags and creator. Use **Apply** or Enter after typing a username. **Videos only** and **With prompt** apply immediately.
+- **Model search** looks up checkpoints and LoRAs by name. Choose a result to filter the online gallery. The clear button cancels the search and removes the selected model.
+- **View** controls thumbnail size, preview resolution and items per page (24, 50, 100 or 150). Preview resolution applies to resizable CDN images. The workflow uses the original media.
+- **Clear previews** unloads this node's gallery images, videos and page data and turns Display off. Turn **Display** back on to reload the same page. Saved favorites and the workflow selection are preserved.
+- **Favorites**, **Refresh** and **Display** remain accessible from every panel. The workflow saves each node's panel, filters and page.
+
+The gallery uses the public Civitai API without an account. Civitai applies its browsing limits to these requests.
 
 ### Grid & Cards
 
 - **★ Favorite**: toggle favorite with one click
-- **Open ↗**: open the Civitai page in the browser
+- **Open link (↗)**: open the Civitai page in the browser
 
 ### Selection
 
-Click on a card to select:
-
-- **Prompts** (positive/negative)
-- **Info JSON**
-- **Image/Video** tensor (if output is connected)
-
+Click a card to use it in the workflow. Its prompts and metadata come from the selected Civitai post. A post can have an empty negative prompt or omit generation metadata entirely.
 ---
 
 ## 💡 Performance Tips
 
-- **Batch 50–100**: good balance between speed and memory.
-- **Videos only**: the first batch is optimized for quick previews.
-- **Hide no-prompt**: useful to focus on workflow-ready content.
+- **Per page** controls the number of cards per page. Use 24 on a slow connection and increase it when browsing many results.
+- **Display** pauses gallery rendering while you work elsewhere in the graph.
+- **With prompt**: useful to focus on workflow-ready content.
 - **Favorites**: use **Favorites only** mode to build reusable libraries.
 
 ---
@@ -164,14 +187,14 @@ By placing the **Clear LoRA Name** node after the Hub’s prompt outputs:
 ---
 ## ❓ FAQ
 
-**Q. I scroll to the bottom and nothing loads, what should I do?**\
-Stay at the bottom: the “near-bottom” mechanism automatically triggers loading. If the network is slow, wait until the current batch finishes (check the status). If it still seems stuck, scroll slightly up and back down to re-trigger.
+**Q. The gallery stopped loading. How do I continue?**  
+Check the status below the gallery. If the network request failed, use **Retry** to resume. Use **Refresh** to restart from the first page.
 
 **Q. Favorites don’t appear immediately in “Favorites only” mode.**\
 The list is refreshed automatically, but if there is still a delay, use **Refresh** to sync.
 
-**Q. Why do some videos take time to show a preview?**\
-Videos load metadata first. The preview appears after a micro-seek. On slow networks, a fallback forces full loading.
+**Q. Can I use a video from the gallery as a moving clip in my workflow?**  
+The gallery plays video previews. The **Image** socket supplies the first decoded frame as a single RGB image. The prompt and JSON outputs are available independently.
 
 ---
 

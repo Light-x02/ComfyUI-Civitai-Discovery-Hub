@@ -1,0 +1,7 @@
+/tests/
+/.github/
+/.comfyignore
+/civitai_favorites.json
+/civitai_favorites.json.tmp
+__pycache__/
+/.tracking
