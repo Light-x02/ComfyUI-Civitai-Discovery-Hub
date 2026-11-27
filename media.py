@@ -15,7 +15,10 @@ IMAGE_LIMIT = 64 * 1024 * 1024
 VIDEO_LIMIT = 128 * 1024 * 1024
 WORKFLOW_PREFIX = 4 * 1024 * 1024
 MAX_PIXELS = 32_000_000
-MEDIA_HOSTS = {"image.civitai.com", "image.civitai.red", "image.civitai.green", "image.civitai.work"}
+MEDIA_HOSTS = {
+    "image.civitai.com", "image-b2.civitai.com", "blobs-b2.civitai.com",
+    "image.civitai.red", "image.civitai.green", "image.civitai.work",
+}
 
 
 def _check_url(url):
@@ -23,7 +26,7 @@ def _check_url(url):
         raise ValueError("Missing or invalid Civitai media URL.")
     parts = urlsplit(url)
     if parts.scheme != "https" or parts.netloc.lower().removesuffix(":443") not in MEDIA_HOSTS:
-        raise ValueError("Media must use an approved HTTPS Civitai image host.")
+        raise ValueError(f"Media must use an approved HTTPS Civitai image host (received {parts.hostname or 'unknown host'}).")
 
 
 class _MediaRedirects(HTTPRedirectHandler):

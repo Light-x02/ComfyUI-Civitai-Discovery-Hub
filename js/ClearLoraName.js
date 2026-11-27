@@ -3,6 +3,7 @@
 
 // ----- SECTION: Imports -----
 import { app } from "/scripts/app.js";
+import { createHubWidgetRoot } from "./gallery-view.js";
 
 (function () {
     const EXT_NAME = "ClearLoraName.FuturisticTheme";
@@ -42,92 +43,31 @@ import { app } from "/scripts/app.js";
                 node.resizable = true;
                 node.size = clampSize(node.size);
 
-                const uid = `cln-${Math.random().toString(36).slice(2, 9)}`;
-                const root = document.createElement("div");
-                root.id = uid;
-
+                const root = createHubWidgetRoot(document);
+                root.classList.add("cln-widget");
                 root.innerHTML = `
-<style>
-#${uid}{
-  width:100%; height:100%; box-sizing:border-box; color:var(--node-text-color);
-  font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
-  pointer-events:none;
-}
-#${uid} .cln-wrap{
-  height:100%;
-  display:flex; flex-direction:column; gap:8px; border-radius:12px;
-  background:
-    radial-gradient(1200px 400px at -10% -10%, rgba(57,208,255,.10), transparent 70%),
-    radial-gradient(900px 300px at 120% -20%, rgba(106,92,255,.08), transparent 60%);
-  border:1px solid rgba(255,255,255,.12); padding:8px 10px; box-sizing:border-box;
-  overflow:visible; pointer-events:none;
-}
-#${uid} .cln-head{
-  flex:0 0 auto;
-  display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:12px;
-  background:linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
-  border:1px solid rgba(255,255,255,.12); box-shadow:0 8px 24px rgba(0,0,0,.35);
-  pointer-events:none;
-}
-#${uid} .dot{width:10px;height:10px;border-radius:50%;
-  background:radial-gradient(closest-side,#39d0ff,transparent); box-shadow:0 0 12px #39d0ff}
-#${uid} .title{font-weight:700;letter-spacing:.3px}
-#${uid} .sub{margin-left:auto;opacity:.75;font-size:12px}
-#${uid} .cln-body{
-  flex:0 0 auto;
-  border:1px solid rgba(255,255,255,.12); border-radius:12px;
-  background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
-  padding:10px 12px; display:flex; align-items:center; box-sizing:border-box;
-  pointer-events:none;
-}
-#${uid} .tips{font-size:12px;opacity:.9;line-height:1.5}
-#${uid} .kbd{
-  padding:1px 6px; border-radius:6px; border:1px solid rgba(255,255,255,.14);
-  background:rgba(255,255,255,.06); font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-#${uid} .cln-toggle{
-  margin-left:12px; padding:6px 10px; border-radius:10px;
-  border:1px solid rgba(255,255,255,.12);
-  background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
-  cursor:pointer; user-select:none; font-size:12px;
-  pointer-events:auto;
-}
-#${uid} .cln-toggle.on  { color:#22c55e; border-color:#22c55e66; }
-#${uid} .cln-toggle.off { color:#ef4444; border-color:#ef444466; }
-</style>
-
-<div class="cln-wrap">
-  <div class="cln-head">
-    <span class="dot"></span>
-    <div class="title">🧹 Clear LoRA Name</div>
-    <div class="sub">Neon UI • Clean & minimal</div>
-    <button type="button" class="cln-toggle" aria-label="Remove LoRA tags">On</button>
-  </div>
-  <div class="cln-body">
-    <div class="tips">
-      Removes all <span class="kbd">&lt;lora:...&gt;</span> tags from Positive/Negative prompts.<br/>
-      Connect upstream prompts → this node outputs cleaned strings ready for your workflow.
+<div class="cg-root">
+  <header class="cg-bar">
+    <div class="cg-brand"><span class="cg-mark" aria-hidden="true"><i></i><i></i><i></i></span>Clear LoRA Name</div>
+    <div class="cg-actions">
+      <button type="button" class="cg-btn cg-toggle-render cln-toggle" aria-label="Remove LoRA tags"></button>
     </div>
-  </div>
-</div>
-                `;
+  </header>
+  <p class="cln-summary"></p>
+</div>`;
 
-                const domw = node.addDOMWidget("clear_lora_name_ui", "div", root, { serialize: false });
-                domw.computeSize = function (w) {
-                    const curW = node.size?.[0] ?? MIN_W;
-                    const width = Math.max(MIN_W - 20, (w ?? curW) - 20);
-                    const wrap = root.querySelector(".cln-wrap");
-                    const EXTRA = 24;
-                    let natural = 140;
-                    if (wrap) {
-                        const prevH = wrap.style.height;
-                        wrap.style.height = "auto";
-                        natural = Math.ceil(wrap.scrollHeight);
-                        wrap.style.height = prevH || "";
-                    }
-                    const height = Math.max(150, natural + EXTRA);
-                    return [width, height];
-                };
+                node.addDOMWidget("clear_lora_name_ui", "div", root, {
+                    serialize: false,
+                    getMinHeight: () => 134,
+                    getMaxHeight: () => 134,
+                    onDraw(widget) {
+                        // The classic canvas positions DOM widgets in a separate overlay.
+                        const width = node.size[0];
+                        if (widget.width === width) return;
+                        widget.width = width;
+                        root.style.setProperty("--cln-canvas-width", (width - 2 * widget.margin) + "px");
+                    },
+                });
 
                 const _onResize = node.onResize;
                 node.onResize = function (size) {
@@ -138,6 +78,7 @@ import { app } from "/scripts/app.js";
                 };
 
                 const btn = root.querySelector(".cln-toggle");
+                const summary = root.querySelector(".cln-summary");
 
                 const hideEnabledWidget = () => {
                     const w = node.widgets?.find((ww) => ww.name === "enabled");
@@ -160,10 +101,11 @@ import { app } from "/scripts/app.js";
                     refreshEnabledRef();
                     btn.disabled = !wEnabled;
                     const on = Boolean(wEnabled?.value ?? true);
-                    btn.textContent = on ? "On" : "Off";
+                    btn.textContent = on ? "Cleaning on" : "Cleaning off";
                     btn.setAttribute("aria-pressed", String(on));
-                    btn.classList.toggle("on", on);
-                    btn.classList.toggle("off", !on);
+                    summary.textContent = on
+                        ? "LoRA tags are removed from both positive and negative prompts."
+                        : "Both prompts pass through with their original LoRA tags.";
                 };
 
                 btn.addEventListener("click", (event) => {

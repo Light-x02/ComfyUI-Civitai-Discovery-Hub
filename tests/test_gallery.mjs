@@ -88,11 +88,11 @@ function gallery(respond = () => page([1, 2])) {
             queueMicrotask(() => this.callback([{ target, isIntersecting: true }]));
         }
     }
-    const document = {
+    const document = Object.assign(new EventTarget(), {
         head: new Element("head"),
         getElementById(id) { return this.head.children.find(el => el.id === id) ?? null; },
         createElement(tag) { return new Element(tag); },
-    };
+    });
     vm.runInNewContext(source, {
         app, api, URL, URLSearchParams, AbortController, EventTarget, CustomEvent, console, setTimeout, clearTimeout,
         buildGalleryView, document,
@@ -166,12 +166,45 @@ test("two gallery nodes share one stylesheet and build independent tag controls"
     second.onRemoved();
 });
 
-test("a restored selection follows the current output links when queued", async () => {
+test("hover reserves vertical wheel input for an overflowing gallery and releases it on exit or removal", () => {
+    const ui = gallery();
+    const node = ui.add(1);
+    const scroll = node.control("scroll");
+    const wheel = (target, init = {}) => {
+        const event = Object.assign(new Event("wheel", { cancelable: true }), {
+            deltaX: 0, deltaY: 100, composedPath: () => [target, ui.document], ...init,
+        });
+        ui.document.dispatchEvent(event);
+        assert.equal(event.defaultPrevented, false);
+        return event.cancelBubble;
+    };
+    scroll.scrollHeight = scroll.clientHeight + 100;
+    assert.equal(wheel(scroll), false);
+    scroll.dispatchEvent(new Event("pointerenter"));
+    assert.equal(wheel(scroll), true);
+    assert.equal(wheel(scroll, { deltaY: -100 }), true);
+    assert.equal(wheel(node.control("foot")), false);
+    for (const gesture of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { deltaX: 120 }]) {
+        assert.equal(wheel(scroll, gesture), false);
+    }
+    scroll.scrollHeight = scroll.clientHeight;
+    assert.equal(wheel(scroll), false);
+    scroll.scrollHeight += 100;
+    scroll.dispatchEvent(new Event("pointerleave"));
+    assert.equal(wheel(scroll), false);
+    scroll.dispatchEvent(new Event("pointerenter"));
+    node.onRemoved();
+    assert.equal(wheel(scroll), false);
+});
+
+test("the hidden selection survives restore and follows the current output links when queued", async () => {
     const ui = gallery();
     const first = ui.add(11);
+    assert.equal(first.widgets[0].hidden, true);
     await ui.settle();
     first.cards()[0].click();
     const restored = ui.add(12, first.save());
+    assert.equal(restored.widgets[0].hidden, true);
     assert.equal(first.save().properties.__cg.selection_data, undefined);
     await ui.settle();
     assert.equal((await restored.queueSelection()).item.id, 1);
@@ -434,6 +467,23 @@ test("preview resolution preserves the workflow source, page controls and saved 
     restored.cards()[0].click();
     assert.deepEqual(Array.from(restored.size), [954, 641]);
     assert.equal(restored.control("resolution").value, "256");
+});
+
+test("a direct Civitai storage URL is preserved for the preview and connected image output", async () => {
+    const urls = ["https://image-b2.civitai.com/file/civitai-media-cache/abc/original",
+        "https://blobs-b2.civitai.com/file/blobs-managed-public/example"];
+    const ui = gallery(() => ({ items: urls.map((url, i) => ({ ...image(i + 1), url })), metadata: {} }));
+    const node = ui.add(1);
+    await ui.settle();
+    node.outputs[2].links = [42];
+    for (const [i, url] of urls.entries()) {
+        const card = node.cards()[i];
+        assert.equal(card.querySelector("img").src, url);
+        card.click();
+        const selection = await node.queueSelection();
+        assert.equal(selection.download_image, true);
+        assert.equal(selection.item.url, url);
+    }
 });
 
 test("clearing a model search discards late suggestions and removes the selected filter", async () => {

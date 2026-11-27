@@ -9,7 +9,7 @@ const USER_TAG_GROUPS = [
     { label: "🍔 Other", items: [{ name: "🍔 Food", id: "3915" }] },
 ];
 
-export function buildGalleryView(doc) {
+export function createHubWidgetRoot(doc) {
     if (!doc.getElementById("civitai-discovery-hub-stylesheet")) {
         const link = doc.createElement("link");
         link.id = "civitai-discovery-hub-stylesheet";
@@ -18,8 +18,14 @@ export function buildGalleryView(doc) {
         doc.head.appendChild(link);
     }
 
-    const uid = `cg-${Math.random().toString(36).slice(2, 9)}`;
     const root = doc.createElement("div");
+    root.classList.add("civitai-hub-ui");
+    return root;
+}
+
+export function buildGalleryView(doc) {
+    const uid = `cg-${Math.random().toString(36).slice(2, 9)}`;
+    const root = createHubWidgetRoot(doc);
     root.id = uid;
     root.classList.add("civitai-discovery-gallery");
     root.innerHTML = `
@@ -91,7 +97,7 @@ export function buildGalleryView(doc) {
       </select></div>
     </section>
   </header>
-  <div class="cg-scroll" tabindex="0" role="region" aria-label="Civitai gallery">
+  <div class="cg-scroll" tabindex="0" role="region" aria-label="Civitai gallery" data-capture-wheel="true">
     <div class="cg-masonry"></div>
   </div>
   <footer class="cg-foot">

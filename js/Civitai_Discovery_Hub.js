@@ -9,7 +9,10 @@ const TARGET_CLASS = "CivitaiDiscoveryHubNode";
 
 const galleries = new WeakMap();
 const favoriteChanges = new EventTarget();
-const MEDIA_HOSTS = new Set(["image.civitai.com", "image.civitai.red", "image.civitai.green", "image.civitai.work"]);
+const MEDIA_HOSTS = new Set([
+    "image.civitai.com", "image-b2.civitai.com", "blobs-b2.civitai.com",
+    "image.civitai.red", "image.civitai.green", "image.civitai.work",
+]);
 
 // ----- SECTION: Helpers -----
 function sanitizeProxyWidgets(props) {
@@ -96,6 +99,7 @@ function galleryWidget(node) {
     if (index >= 0) node.removeInput(index);
     let widget = node.widgets?.find(w => w.name === "selection_data");
     if (!widget) widget = node.addWidget("text", "selection_data", "{}", () => {}, { multiline: true });
+    widget.hidden = true;
     widget.computeSize = () => [0, 0];
     widget.draw = () => {};
     const element = widget.element || widget.inputEl;
@@ -150,7 +154,7 @@ function createGallery(node) {
     let starts = [null];
     let current = 0, last = null, retryPage = 1;
     let frame = 0, restoreTop = 0, selectedKey = null;
-    const seen = new Set(), pages = new Map(), stars = new Map(), saving = new Set();
+    const slots = new Map(), stars = new Map(), saving = new Set();
     let currentCard = null;
 
     const panels = ["filters", "models", "view"];
@@ -267,20 +271,7 @@ function createGallery(node) {
     }
     favoriteChanges.addEventListener("change", favoriteChanged);
 
-    const videoObserver = new IntersectionObserver(entries => {
-        if (!enabled || !visible || removed) return;
-        for (const entry of entries) {
-            const video = entry.target;
-            if (!entry.isIntersecting) {
-                video.pause();
-            } else if (!video.getAttribute("src") && video.dataset.src) {
-                video.preload = "metadata";
-                video.src = video.dataset.src;
-            }
-        }
-    }, { root: scroll, rootMargin: "350px" });
-
-    function cardFor(item) {
+    function cardFor(item, source) {
         const key = String(item.id), meta = item.meta || {};
         const card = document.createElement("div");
         card.className = "cg-card";
@@ -292,16 +283,13 @@ function createGallery(node) {
             card.classList.add("selected");
             currentCard = card;
         }
-        const source = videoUrl(item);
         const media = document.createElement(source ? "video" : "img");
-        media.style.aspectRatio = item.width > 0 && item.height > 0 ? `${item.width} / ${item.height}` : "4 / 5";
         if (source) {
             media.className = "cg-vid";
             media.controls = true;
             media.muted = true;
             media.playsInline = true;
-            media.preload = "none";
-            media.dataset.src = source;
+            media.preload = "metadata";
             const poster = [item.thumbnail, item.preview, item.cover, item.coverUrl, item.previewUrl, item.image,
                 meta.thumbnail, meta.thumbnailUrl, meta.preview, meta.previewUrl, meta.image].map(mediaUrl).find(Boolean);
             if (poster) media.poster = previewUrl(poster, resolution.value);
@@ -309,7 +297,7 @@ function createGallery(node) {
             else media.addEventListener("loadedmetadata", () => {
                 if (media.paused && !media.currentTime && media.duration > 0) media.currentTime = Math.min(0.1, media.duration / 2);
             }, { once: true });
-            videoObserver.observe(media);
+            media.src = source;
         } else {
             media.className = "cg-img";
             media.loading = "lazy";
@@ -361,76 +349,74 @@ function createGallery(node) {
         return card;
     }
 
-    function unmount(page) {
-        if (!page.mounted) return;
-        // Keep the page footprint when releasing its media so scrolling cannot jump.
-        const height = page.element.offsetHeight || estimateHeight(page.items);
-        page.element.style.height = `${height}px`;
-        for (const image of page.element.querySelectorAll("img")) image.removeAttribute("src");
-        for (const video of page.element.querySelectorAll("video")) {
-            videoObserver.unobserve(video);
+    function unmount(element, slot) {
+        if (!slot.card) return;
+        const video = slot.card.querySelector("video");
+        if (video) {
             video.pause();
-            delete video.dataset.src;
             video.removeAttribute("poster");
-            if (video.getAttribute("src")) {
-                video.removeAttribute("src");
-                video.load();
-            }
-        }
-        if (currentCard && page.element.contains(currentCard)) currentCard = null;
-        for (const item of page.items) stars.delete(String(item.id));
-        page.element.replaceChildren();
-        page.mounted = false;
+            video.removeAttribute("src");
+            video.load();
+        } else slot.card.querySelector("img").removeAttribute("src");
+        if (currentCard === slot.card) currentCard = null;
+        stars.delete(String(slot.item.id));
+        element.replaceChildren();
+        slot.card = null;
     }
 
-    function mount(page) {
-        if (page.mounted) return;
-        page.mounted = true;
-        page.element.style.height = "";
-        page.element.append(...page.items.map(cardFor));
+    function mount(element, slot) {
+        if (slot.card) return;
+        slot.card = cardFor(slot.item, slot.source);
+        element.appendChild(slot.card);
     }
 
-    const pageObserver = new IntersectionObserver(entries => {
+    const cardObserver = new IntersectionObserver(entries => {
         if (!enabled || !visible || removed) return;
-        for (const entry of entries) {
-            const page = pages.get(entry.target);
-            if (!page) continue;
-            if (entry.isIntersecting) mount(page);
-            else if (!page.element.contains(document.activeElement)) unmount(page);
+        for (const { target, isIntersecting } of entries) {
+            const slot = slots.get(target);
+            if (!slot) continue;
+            if (isIntersecting) mount(target, slot);
+            else if (target.contains(document.activeElement)) slot.card?.querySelector("video")?.pause();
+            else unmount(target, slot);
         }
     }, { root: scroll, rootMargin: "350px" });
 
-    function estimateHeight(items) {
-        const width = grid.clientWidth || Math.max(260, (node.size?.[0] || 900) - 32);
-        const count = Math.max(1, Math.floor((width + 12) / (Number(thumb.value) + 12)));
-        const column = (width - (count - 1) * 12) / count;
-        const total = items.reduce((sum, item) => sum + column * (item.width > 0 && item.height > 0 ? item.height / item.width : 1.25) + 55, 0);
-        return Math.ceil(total / Math.min(items.length, count));
+    function layoutCards() {
+        const width = grid.clientWidth;
+        if (!width || !slots.size) return;
+        const gap = 12;
+        const count = Math.max(1, Math.floor((width + gap) / (Number(thumb.value) + gap)));
+        const columnWidth = (width - (count - 1) * gap) / count;
+        const videoLimit = (document.documentElement?.clientHeight || scroll.clientHeight) * 0.72;
+        const bottoms = Array(count).fill(0);
+        grid.style.setProperty("--cg-column-width", columnWidth + "px");
+        for (const [element, { item, source }] of slots) {
+            const column = bottoms.indexOf(Math.min(...bottoms));
+            const ratio = item.width > 0 && item.height > 0 ? item.height / item.width : 1.25;
+            const mediaHeight = (columnWidth - 2) * ratio;
+            // Reserve both 1px borders and the 31px action bar, even when the preview is unloaded.
+            const height = (source ? Math.min(videoLimit, mediaHeight) : mediaHeight) + 33;
+            element.style.left = column * (columnWidth + gap) + "px";
+            element.style.top = bottoms[column] + "px";
+            element.style.height = height + "px";
+            bottoms[column] += height + gap;
+        }
+        grid.style.height = (Math.max(...bottoms) - gap) + "px";
     }
 
     function append(items) {
-        const fresh = [];
+        const seen = new Set();
         for (const item of items) {
             if (item?.id == null || seen.has(String(item.id))) continue;
-            fresh.push(item);
             seen.add(String(item.id));
-        }
-        // Keep at least one full row even with small thumbnails on a wide node.
-        const columns = Math.max(1, Math.floor((grid.clientWidth + 12) / (Number(thumb.value) + 12)));
-        const groupSize = Math.ceil(6 / columns) * columns;
-        for (let start = 0; start < fresh.length; start += groupSize) {
-            const chunk = fresh.slice(start, start + groupSize);
             const element = document.createElement("div");
-            element.className = "cg-page";
-            element.style.height = `${estimateHeight(chunk)}px`;
-            const page = { element, items: chunk, mounted: false };
-            const first = pages.size === 0;
-            pages.set(element, page);
-            grid.appendChild(element);
-            if (first) mount(page);
-            pageObserver.observe(element);
+            element.className = "cg-slot";
+            slots.set(element, { item, source: videoUrl(item), card: null });
         }
-        return fresh.length;
+        grid.append(...slots.keys());
+        layoutCards();
+        for (const element of slots.keys()) cardObserver.observe(element);
+        return seen.size;
     }
 
     function schedule() {
@@ -562,14 +548,12 @@ function createGallery(node) {
     }
 
     function clearCards() {
-        for (const page of pages.values()) {
-            pageObserver.unobserve(page.element);
-            unmount(page);
-        }
-        pages.clear();
-        seen.clear();
+        cardObserver.disconnect();
+        for (const [element, slot] of slots) unmount(element, slot);
+        slots.clear();
         currentCard = null;
         grid.replaceChildren();
+        grid.style.height = "";
     }
 
     function reset(top) {
@@ -604,14 +588,14 @@ function createGallery(node) {
         restoreTop = restoreTop || state(node).scroll_top || 0;
         idsRequest?.abort();
         idsRequest = null;
-        for (const page of pages.values()) unmount(page);
-        pageObserver.disconnect();
-        videoObserver.disconnect();
+        cardObserver.disconnect();
+        for (const [element, slot] of slots) unmount(element, slot);
     }
 
     function resume() {
         if (!visible || !enabled || removed) return;
-        for (const page of pages.values()) pageObserver.observe(page.element);
+        layoutCards();
+        for (const element of slots.keys()) cardObserver.observe(element);
         void loadIds();
         if (!current) void loadPage(retryPage);
         renderPager();
@@ -631,7 +615,7 @@ function createGallery(node) {
     function display(on) {
         enabled = on;
         if (!on) pause();
-        clearPreviews.disabled = !on && pages.size === 0;
+        clearPreviews.disabled = !on && slots.size === 0;
         renderButton.classList.toggle("cg-render-on", on);
         renderButton.classList.toggle("cg-render-off", !on);
         renderButton.setAttribute("aria-pressed", String(on));
@@ -653,10 +637,7 @@ function createGallery(node) {
 
     function setThumbnailWidth(value) {
         thumb.value = ["160", "220", "280", "400"].includes(value) ? value : "280";
-        grid.style.setProperty("--cg-thumb-width", thumb.value + "px");
-        for (const page of pages.values()) {
-            if (!page.mounted) page.element.style.height = estimateHeight(page.items) + "px";
-        }
+        layoutCards();
         schedule();
     }
 
@@ -720,8 +701,8 @@ function createGallery(node) {
     });
     resolution.addEventListener("change", () => {
         state(node).preview_resolution = resolution.value;
-        for (const page of pages.values()) {
-            if (page.mounted) { unmount(page); mount(page); }
+        for (const [element, slot] of slots) {
+            if (slot.card) { unmount(element, slot); mount(element, slot); }
         }
         dirty();
     });
@@ -817,11 +798,23 @@ function createGallery(node) {
         if (!restoreTop) state(node).scroll_top = scroll.scrollTop;
         schedule();
     }, { passive: true });
-    const stopRestoring = () => { restoreTop = 0; };
-    scroll.addEventListener("wheel", stopRestoring, { passive: true });
-    scroll.addEventListener("pointerdown", stopRestoring, { passive: true });
-    const resize = new ResizeObserver(schedule);
+    // Nodes 2.0 intercepts wheel events on a canvas ancestor during capture, before the widget sees them.
+    function keepGalleryWheel(event) {
+        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || !event.deltaY ||
+            Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+        if (!event.composedPath().includes(scroll) || scroll.scrollHeight <= scroll.clientHeight) return;
+        restoreTop = 0;
+        event.stopPropagation(); // The browser still performs the native scroll.
+    }
+    const releaseWheel = () => document.removeEventListener("wheel", keepGalleryWheel, { capture: true });
+    scroll.addEventListener("pointerenter", () => {
+        document.addEventListener("wheel", keepGalleryWheel, { capture: true, passive: true });
+    });
+    scroll.addEventListener("pointerleave", releaseWheel);
+    scroll.addEventListener("pointerdown", () => { restoreTop = 0; }, { passive: true });
+    const resize = new ResizeObserver(() => { layoutCards(); schedule(); });
     resize.observe(scroll);
+    resize.observe(document.documentElement);
     const previousResize = node.onResize;
     node.onResize = function (size) {
         size[0] = Math.max(720, size[0]);
@@ -831,15 +824,13 @@ function createGallery(node) {
 
     function dispose() {
         removed = true;
+        releaseWheel();
         cancelModelSearch();
         pause();
         viewport.disconnect();
         resize.disconnect();
         favoriteChanges.removeEventListener("change", favoriteChanged);
-        pages.clear();
-        seen.clear();
-        stars.clear();
-        grid.replaceChildren();
+        clearCards();
     }
     configure();
     return { configure, dispose };

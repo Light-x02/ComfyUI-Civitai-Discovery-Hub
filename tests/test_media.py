@@ -1,7 +1,10 @@
 import io
 import json
+from email.message import Message
 from unittest import TestCase
 from unittest.mock import Mock, patch
+from urllib.request import HTTPSHandler, Request
+from urllib.response import addinfourl
 
 import av
 import numpy as np
@@ -15,6 +18,41 @@ URL = "https://image.civitai.com/example/media"
 
 
 class MediaTests(TestCase):
+    def test_image_output_follows_civitai_storage_redirect(self):
+        storage = "https://image-b2.civitai.com/file/civitai-media-cache/abc/original"
+        blob = "https://blobs-b2.civitai.com/file/blobs-managed-public/example"
+        png = io.BytesIO()
+        Image.new("RGB", (3, 2), "red").save(png, "PNG")
+
+        def respond(request):
+            headers = Message()
+            if request.full_url in redirects:
+                headers["Location"] = redirects[request.full_url]
+                response = addinfourl(io.BytesIO(), headers, request.full_url, 302)
+                response.msg = "Found"
+            else:
+                self.assertEqual(request.full_url, route[-1])
+                response = addinfourl(io.BytesIO(png.getvalue()), headers, request.full_url, 200)
+                response.msg = "OK"
+            return response
+
+        for route in ([URL, storage], [URL, blob], [URL, storage, blob], [storage], [blob]):
+            redirects = dict(zip(route, route[1:]))
+            selection = {"item": {"url": route[0]}, "download_image": True}
+            with self.subTest(route=route), patch.object(HTTPSHandler, "https_open", side_effect=respond) as transport:
+                _, _, tensor, _ = hub.CivitaiDiscoveryHubNode.execute(json.dumps(selection))
+                visited = [call.args[0].full_url for call in transport.call_args_list]
+                self.assertEqual(visited, route)
+                self.assertEqual(tuple(tensor.shape), (1, 2, 3, 3))
+                self.assertEqual(tensor[0, 0, 0].tolist(), [1.0, 0.0, 0.0])
+
+    def test_redirects_still_require_an_exact_https_media_host(self):
+        request = Request(URL)
+        for target in ("https://example.org/photo", "https://image-b2.civitai.com.example.org/photo",
+                       "http://image-b2.civitai.com/photo", "https://image-b2.civitai.com:8443/photo"):
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, "approved HTTPS"):
+                media._MediaRedirects().redirect_request(request, None, 302, "Found", {}, target)
+
     def test_png_and_exif_oriented_jpeg(self):
         for mode, expected in [("PNG", (1, 2, 3, 3)), ("JPEG", (1, 3, 2, 3))]:
             with self.subTest(mode=mode):

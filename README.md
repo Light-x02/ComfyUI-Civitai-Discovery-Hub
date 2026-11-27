@@ -13,11 +13,32 @@
 - **GitHub**: [https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub](https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub)
 - **Node name in ComfyUI**: **Civitai Discovery Hub**
 
-![Civitai Discovery Hub 1.6.0 with the Filters tab open, an image selected and page controls below the gallery](assets/gallery-1.6.0.png)
+![Civitai Discovery Hub gallery with a hooded figure selected, Clear LoRA Name, the positive prompt and metadata, and the selected image shown in Preview Image](assets/07865486.png)
 
 ## Changelog
 
-### 1.6.0 (November 26, 2026)
+### 1.6.1 (November 27, 2026) · ComfyUI Nodes 2.0 compatibility
+
+#### Nodes 2.0 and gallery navigation
+
+- In Nodes 2.0, hover over the gallery and use the mouse wheel to browse images. No click is needed. Ctrl + wheel still zooms the workflow, and moving the pointer outside the gallery restores the normal mouse wheel behavior.
+- The gallery scrolls within the node at every page size, including 150 items. The filters and page buttons stay in view. The internal `selection_data` field is hidden, and the selected item is still saved with the workflow.
+- Cards now fill the shortest column across the entire page. Portraits and landscapes keep their proportions, with even spacing when the node is resized or the thumbnail size changes.
+- The gallery now loads and unloads previews one card at a time near the visible area. Each card keeps its place as you scroll, and the selected card is highlighted when you return to it.
+
+#### Image output
+
+- Fixed an execution error when the `IMAGE` output was connected to **Preview Image** or another image node. The Hub now accepts original media and HTTPS redirects from `image-b2.civitai.com` and `blobs-b2.civitai.com`. If another host is rejected, the error message names it.
+
+#### Clear LoRA Name
+
+- The cleaner now shares the gallery's visual style. The **Cleaning on** and **Cleaning off** states explain whether LoRA tags are removed from both prompts or passed through.
+- With Nodes 2.0 turned off, the panel follows the width of the classic node. The button stays inside the frame and the description wraps when the node is narrow.
+
+After updating, restart ComfyUI and reload the browser tab (Ctrl + F5 on Windows).
+
+<details>
+<summary>1.6.0 (November 26, 2026) &middot; Gallery redesign and pagination</summary>
 
 #### Redesigned gallery interface
 
@@ -45,6 +66,8 @@
 - The two nodes are registered explicitly. GitHub runs the Python and JavaScript regression suites before publishing. The Registry package excludes test files and GitHub workflow configuration.
 
 After updating, restart ComfyUI and reload the browser tab to load the new interface.
+
+</details>
 
 <details>
 <summary>1.5.0 (December 16, 2025) &middot; V3 migration and gallery stability</summary>
