@@ -18,7 +18,9 @@ Both nodes follow the language selected in **ComfyUI Settings → Comfy → Loca
 - **GitHub**: [https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub](https://github.com/Light-x02/ComfyUI-Civitai-Discovery-Hub)
 - **Node name in ComfyUI**: **Civitai Discovery Hub**
 
-![Civitai Discovery Hub gallery with a hooded figure selected, Clear LoRA Name, the positive prompt and metadata, and the selected image shown in Preview Image](assets/07865486.png)
+![Civitai Discovery Hub in ComfyUI](assets/040556.png)
+
+[Watch the overview video](https://www.youtube.com/watch?v=0z4scGXWCug)
 
 ## Changelog
 
