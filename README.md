@@ -1,8 +1,13 @@
+# 📜 ComfyUI-Civitai-Discovery-Hub
+
+**Supported languages**  
+:gb: English · :fr: Français · :es: Español · :cn: 简体中文 (Simplified Chinese) · :taiwan: 繁體中文 (Traditional Chinese) · :jp: 日本語 (Japanese) · :kr: 한국어 (Korean)
+
+Both nodes follow the language selected in **ComfyUI Settings → Comfy → Locale → Language**.
+
 ⭐ **Give a star, it shines and keeps us motivated! ✨**
 
 [☕ Support on Ko-fi](https://ko-fi.com/light_x02)
-
-# 📜 ComfyUI-Civitai-Discovery-Hub
 
 ![ComfyUI](https://img.shields.io/badge/ComfyUI-custom%20nodes-5a67d8)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green)
@@ -16,6 +21,18 @@
 ![Civitai Discovery Hub gallery with a hooded figure selected, Clear LoRA Name, the positive prompt and metadata, and the selected image shown in Preview Image](assets/07865486.png)
 
 ## Changelog
+
+### 1.7.0 (November 28, 2026) · Collections, image search and seven languages
+
+- **Seven interface languages.** Civitai Discovery Hub and Clear LoRA Name now follow your ComfyUI language. Choose English, French, Spanish, Simplified Chinese, Traditional Chinese, Japanese or Korean in **Settings → Comfy → Locale → Language**.
+- **Organize your favorites.** Open **Favorites → Collections** to create a collection and choose its cover. Use **Add to a collection** on any card to file an image or video in several collections. Highlighted names show where it belongs. Click a name again to remove it from that collection.
+- **Find images by checkpoint or LoRA.** Narrow the results by base model or version, see how many models match as you type, and use creator suggestions to find a specific artist.
+- **Combine tags in image searches.** Choose **Dragon** and **Landscape**, for example, to find images tagged with both. Remove either tag with **×** to broaden the search. View your active filters above the gallery and save a search to reuse it in another workflow.
+- **Discover more images.** Browse the oldest or most collected images, or choose **Random** and click **Shuffle again** for another draw with the same filters.
+- **Inspect and reuse a selection.** Open **Details** to enlarge an image, play a video, copy either prompt or read its generation settings. **Resources** lists the published model versions and LoRA weights. Paste a Civitai image or post URL in **Open link**, then return to your previous gallery page.
+- **Manage storage and previews.** Choose your favorites folder under **Storage**. Switch **Display** off to unload previews, then back on to reopen the same page or draw. **Clear image cache** removes this node’s saved previews for the current browser profile. The preview cache is limited to 64 MiB per ComfyUI profile in this browser.
+
+Tested with the classic ComfyUI canvas and Nodes 2.0. After updating, restart ComfyUI and reload the browser tab.
 
 ### 1.6.1 (November 27, 2026) · ComfyUI Nodes 2.0 compatibility
 
@@ -93,13 +110,11 @@ After updating, restart ComfyUI and reload the browser tab to load the new inter
 
 ## ✨ Main Features
 
-- **Page navigation** uses the buttons below the gallery. The workflow remembers the active page when switching tabs. Changing filters starts a new search on page 1.
-- **Advanced filters**: NSFW, sort (Newest / Most Reactions / Most Comments), period (Day / Week / Month / Year / AllTime), tags, user.
-- **“Videos only” mode**: display only videos.
-- **With prompt**: exclude content without positive prompts.
-- **Favorites**: add/remove favorites (★) and switch to **Favorites only** view.
-- **Workflow outputs** provide positive and negative prompts, JSON metadata and an RGB image. Selecting a video provides its first frame.
-- **Modern UI**: adaptive masonry grid, polished design, real-time loading status.
+- Browse Civitai images and videos by checkpoint, LoRA, model version, creator or a combination of tags. Narrow the results to videos or media with a published prompt.
+- Page through the results or shuffle a new selection. The workflow remembers your page or draw, filters and selection.
+- Organize favorites into local collections with custom covers, and reuse saved searches across workflows.
+- Inspect a selection’s prompts, generation settings and resources. Open a Civitai image or post directly from its URL.
+- Send positive and negative prompts, JSON metadata and an RGB image to your workflow. Selecting a video provides its first frame.
 
 ---
 
@@ -139,7 +154,9 @@ To connect a string to **CLIP Text Encode**, convert its text widget to an input
 
 The workflow downloads the selected media when the **Image** output is connected. Image and video downloads are restricted to approved Civitai hosts. The limits are 64 MiB per image, 128 MiB per video, and 32 megapixels per decoded frame. Browsing the gallery also loads thumbnails in the browser.
 
-Favorites are stored in the current ComfyUI profile, under `civitai-discovery-hub/favorites.sqlite3`. On first use in single-user mode, an existing `civitai_favorites.json` in the extension folder is imported and the original is kept. In multi-user mode each profile starts with its own collection. If the old JSON is unreadable, the Hub reports an error and waits for it to be repaired before importing it.
+Single-user installations save `favorites.sqlite3` in **Documents/Comfyui Light_x02/Civitai Discovery Hub**, using the operating system's Documents location. The database holds Civitai media references and metadata. On first use the Hub copies existing profile favorites and keeps the original. Older JSON collections are imported as well.
+
+Open **Storage** on localhost to browse folders on the ComfyUI computer or enter a new folder path. **Save folder** creates the directory if necessary and moves your favorites, collections and saved searches together. **Use default** selects Documents again, then **Save folder** confirms the move. The setting applies across workflows. In multi-user mode each profile keeps its own private database under `civitai-discovery-hub/favorites.sqlite3`.
 
 In **Favorites only**, the period uses the media's publication date, and reaction and comment counts reflect the last saved item. The tag filter uses Civitai tag IDs saved with the item. Older favorites can lack these IDs.
 
@@ -149,22 +166,35 @@ In **Favorites only**, the period uses the media's publication date, and reactio
 
 ### Control bar
 
-- **Filters** includes content rating, sort order, period, tags and creator. Use **Apply** or Enter after typing a username. **Videos only** and **With prompt** apply immediately.
-- **Model search** looks up checkpoints and LoRAs by name. Choose a result to filter the online gallery. The clear button cancels the search and removes the selected model.
+- **Filters** includes content rating, sort, period, tags and creator. Choose tags one at a time. Each result must match all selected tags. Click a tag's × to remove it. Creator suggestions appear after two characters. Apply the name with **Apply** or Enter.
+- Choose **Random**, then **Shuffle again** for another draw. If Civitai rejects random sorting for a filter, the Hub samples the filtered feed and labels the result. **Most Collected** is available in the online gallery. When browsing by a specific model, choose a version for Civitai's engagement rankings.
+- In **Model search**, choose **Checkpoints** or **LoRAs** under **Model type** to browse up to 30 matches. Typing a name updates **Model filter** after a short pause. Enter or **Find model** searches immediately. The count and search criteria appear below the list. When Civitai only supplies a continuation, the count describes the models shown. **All types** groups the results by type. Choose a model to see its images.
+- **Gallery filters** stays above the images on every tab. Expand it for details about the current results. Selected tags appear as removable chips in **Filters**.
+- Under **Filters**, open **Saved searches** to name the current combination. Choose a saved search and click **Apply** to use it in another workflow, or **Update** to replace its filters.
+- In **Favorites**, click the first tile, **Collections**, to open the collection browser. It is available even when your favorites are empty. Inside, the **+** tile creates a collection. Click a named cover to browse it. The path above the images lets you return to **Collections** or directly to **All favorites**.
+- **Base model** narrows the search to a model family. **Version** selects a specific release of the chosen model. The × next to the search field clears the selected model and version. Base-model filtering also works for favorites saved with a base model.
+- **Open link** accepts a Civitai image or post URL. It uses the current content rating and can show both images and videos. **Back to gallery** returns to where you were browsing.
 - **View** controls thumbnail size, preview resolution and items per page (24, 50, 100 or 150). Preview resolution applies to resizable CDN images. The workflow uses the original media.
-- **Clear previews** unloads this node's gallery images, videos and page data and turns Display off. Turn **Display** back on to reload the same page. Saved favorites and the workflow selection are preserved.
-- **Favorites**, **Refresh** and **Display** remain accessible from every panel. The workflow saves each node's panel, filters and page.
+- Turn **Display** off to cancel pending gallery requests and unload its images, videos and page data. Turn it on to reload the same page. The workflow selection and saved favorites are preserved.
+- **Storage → Clear image cache** clears the Hub’s preview cache on this browser. Images already visible stay on screen. The node starts saving new previews again when you leave the Storage tab. Persistent preview storage requires localhost or HTTPS and browser storage access. Older HTTP cache entries and video playback use the browser’s own cache controls.
+- **Favorites**, **Refresh** and **Display** remain accessible from every panel. The workflow saves each node's panel, filters and page. The coffee button opens the author's Ko-fi page in a new tab.
 
 The gallery uses the public Civitai API without an account. Civitai applies its browsing limits to these requests.
 
 ### Grid & Cards
 
 - **★ Favorite**: toggle favorite with one click
+- **Add to a collection** lists your local collections. A highlighted name and check mark indicate membership. Click the name again to remove the item from that collection. Filing an item also saves it to Favorites. Removing it from a collection keeps its star.
+- **Cover** selects a still image from that collection for its tile. When a cover is removed or exceeds the current content rating, the tile shows another eligible image if one is available. Deleting a collection keeps its favorites.
 - **Open link (↗)**: open the Civitai page in the browser
 
 ### Selection
 
 Click a card to use it in the workflow. Its prompts and metadata come from the selected Civitai post. A post can have an empty negative prompt or omit generation metadata entirely.
+
+Open **Details** next to the selected ID to read and copy prompts. The arrows change the workflow selection as you browse. **Enlarge** opens the published image at full size and **Esc** returns to the gallery.
+
+Click **Resources** beside the selection to see its published checkpoints and LoRAs. Version links open on Civitai, and weights are shown when supplied. Names missing from the image metadata are looked up only while the panel is open.
 ---
 
 ## 💡 Performance Tips

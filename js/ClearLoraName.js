@@ -4,6 +4,7 @@
 // ----- SECTION: Imports -----
 import { app } from "/scripts/app.js";
 import { createHubWidgetRoot } from "./gallery-view.js";
+import { galleryLabels, hubLanguage, loadHubLanguage } from "./hub-i18n.js";
 
 (function () {
     const EXT_NAME = "ClearLoraName.FuturisticTheme";
@@ -21,6 +22,7 @@ import { createHubWidgetRoot } from "./gallery-view.js";
     app.registerExtension({
         name: EXT_NAME,
 
+        beforeConfigureGraph() { return loadHubLanguage(app, document); },
         beforeRegisterNodeDef(nodeType, nodeData) {
             const comfyClass = (nodeType?.comfyClass || nodeData?.name || "").toString();
             const titleGuess = (nodeData?.name || nodeData?.title || nodeType?.title || "").toString();
@@ -44,13 +46,15 @@ import { createHubWidgetRoot } from "./gallery-view.js";
                 node.size = clampSize(node.size);
 
                 const root = createHubWidgetRoot(document);
+                root.lang = hubLanguage(app, document);
+                const t = galleryLabels(root.lang);
                 root.classList.add("cln-widget");
                 root.innerHTML = `
 <div class="cg-root">
   <header class="cg-bar">
-    <div class="cg-brand"><span class="cg-mark" aria-hidden="true"><i></i><i></i><i></i></span>Clear LoRA Name</div>
+    <div class="cg-brand"><span class="cg-mark" aria-hidden="true"><i></i><i></i><i></i></span>${t("Clear LoRA Name")}</div>
     <div class="cg-actions">
-      <button type="button" class="cg-btn cg-toggle-render cln-toggle" aria-label="Remove LoRA tags"></button>
+      <button type="button" class="cg-btn cg-toggle-render cln-toggle" aria-label="${t("Remove LoRA tags")}"></button>
     </div>
   </header>
   <p class="cln-summary"></p>
@@ -101,11 +105,11 @@ import { createHubWidgetRoot } from "./gallery-view.js";
                     refreshEnabledRef();
                     btn.disabled = !wEnabled;
                     const on = Boolean(wEnabled?.value ?? true);
-                    btn.textContent = on ? "Cleaning on" : "Cleaning off";
+                    btn.textContent = t(on ? "Cleaning on" : "Cleaning off");
                     btn.setAttribute("aria-pressed", String(on));
-                    summary.textContent = on
+                    summary.textContent = t(on
                         ? "LoRA tags are removed from both positive and negative prompts."
-                        : "Both prompts pass through with their original LoRA tags.";
+                        : "Both prompts pass through with their original LoRA tags.");
                 };
 
                 btn.addEventListener("click", (event) => {
@@ -141,6 +145,7 @@ import { createHubWidgetRoot } from "./gallery-view.js";
 
                 return r;
             };
+            return loadHubLanguage(app, document);
         },
     });
 })();

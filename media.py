@@ -37,8 +37,7 @@ class _MediaRedirects(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def download_media(url, limit, *, prefix=False):
-    """Return a rewound, caller-owned stream which spills large responses to disk."""
+def _download_media(url, limit, prefix):
     _check_url(url)
     headers = {"User-Agent": "ComfyUI-Civitai-Discovery-Hub", "Accept-Encoding": "identity"}
     if prefix:
@@ -64,7 +63,32 @@ def download_media(url, limit, *, prefix=False):
                     raise ValueError(f"Civitai media exceeds the {limit // 1048576} MiB download limit.")
                 stream.write(chunk)
         stream.seek(0)
-        return stream
+        return stream, response.headers, response.geturl()
+    except BaseException:
+        stream.close()
+        raise
+
+
+def download_media(url, limit, *, prefix=False):
+    """Return a rewound, caller-owned stream which spills large responses to disk."""
+    stream, _, _ = _download_media(url, limit, prefix)
+    return stream
+
+
+def download_preview(url):
+    stream, headers, final_url = _download_media(url, IMAGE_LIMIT, False)
+    try:
+        with Image.open(stream) as photo:
+            _check_dimensions(*photo.size)
+            mime = Image.MIME.get(photo.format)
+            if mime not in {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/bmp"}:
+                raise ValueError("Unsupported preview format.")
+        stream.seek(0)
+        policy = "no-store" if urlsplit(final_url).query else headers.get("Cache-Control", "")
+        return stream, mime, policy, headers.get("Age", "0")
+    except (UnidentifiedImageError, Image.DecompressionBombError) as error:
+        stream.close()
+        raise ValueError("Civitai returned an unreadable or oversized preview.") from error
     except BaseException:
         stream.close()
         raise

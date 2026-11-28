@@ -56,7 +56,8 @@ class GalleryStreamTests(unittest.TestCase):
         with patch.object(hub.aiohttp, "ClientSession", return_value=session):
             with self.assertRaises(StopIteration) as result:
                 hub.search_models(SimpleNamespace(query={"query": " Example "})).send(None)
-        self.assertEqual(session.queries, [{"query": "Example", "limit": "30", "types": ["Checkpoint", "LORA"]}])
+        self.assertEqual(session.queries, [{"query": "Example", "limit": "30", "types": ["Checkpoint", "LORA"],
+                                            "primaryFileOnly": "true"}])
         self.assertEqual(json.loads(result.exception.value.text)["items"], [
             {"id": 12, "type": "Checkpoint", "name": "Example"}, {"id": 13, "type": "LORA", "name": "Example"}])
 
@@ -87,7 +88,8 @@ class GalleryStreamTests(unittest.TestCase):
 
     def test_filters_request_metadata_and_match_the_api_fields(self):
         session = Session(lambda params: Response({"items": [
-            {"id": 1, "type": "video", "url": "https://example.test/asset", "username": "Alice", "meta": {"prompt": "scene"}},
+            {"id": 1, "type": "video", "url": "https://example.test/asset", "username": "Alice",
+             "meta": {"prompt": "scene"}, "tags": [{"id": 4}, {"id": 6}]},
             {"id": 2, "type": "video", "meta": None},
             {"id": 3, "type": "image", "meta": {"positive": "scene"}},
         ], "metadata": {}}))

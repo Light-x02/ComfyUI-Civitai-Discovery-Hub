@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import random
 import sqlite3
 import time
 from urllib.error import HTTPError
@@ -13,8 +14,9 @@ from server import PromptServer
 
 from comfy.cli_args import args as comfy_args
 from comfy_api.latest import io as comfy_io
-from . import favorites, media
-from .gallery_filters import POSITIVE_PROMPT_KEYS, clamp_int, generation_meta, item_is_video, item_matches_query_local, positive_prompt, truthy
+from . import favorite_storage, favorites, gallery_library, media
+from .discovery_api import catalog_id, get_catalog, version_options
+from .gallery_filters import POSITIVE_PROMPT_KEYS, civitai_tag_ids, clamp_int, generation_meta, item_is_video, item_matches_query_local, positive_prompt, truthy
 
 
 def _empty_image_tensor() -> torch.Tensor:
@@ -83,14 +85,22 @@ class CivitaiDiscoveryHubNode(comfy_io.ComfyNode):
 
 # ----- SECTION: Server Routes -----
 prompt_server = PromptServer.instance
+prompt_server.routes.get("/civitai_gallery/catalog/{kind:bases|creators|versions|resource}")(get_catalog)
 
 
-def _with_favorites(request, operation, params, write):
+def _profile_database(request):
     manager = prompt_server.user_manager
     path = manager.get_request_user_filepath(request, favorites.PROFILE_DATABASE)
     if path is None:
         raise KeyError("Unknown profile")
-    with favorites.open_database(path, import_legacy=not comfy_args.multi_user, write=write) as db:
+    return path
+
+
+def _with_favorites(request, operation, params, write):
+    path = _profile_database(request)
+    collection = (favorites.open_database(path, import_legacy=False, write=write) if comfy_args.multi_user
+                  else favorite_storage.open_collection(path, write))
+    with collection as db:
         return operation(db, *params)
 
 
@@ -101,6 +111,8 @@ async def _favorites_response(request, operation, *params, write=False):
         return web.json_response({"error": str(error)}, status=400)
     except favorites.FavoriteNotFound as error:
         return web.json_response({"error": str(error)}, status=404)
+    except favorite_storage.FolderError as error:
+        return web.json_response({"error": str(error)}, status=409)
     except KeyError:
         return web.json_response({"error": "Unknown ComfyUI profile."}, status=403)
     except (OSError, ValueError, sqlite3.Error) as error:
@@ -152,12 +164,75 @@ async def get_all_favorite_tags(request):
     return await _favorites_response(request, favorites.all_tags)
 
 
+@prompt_server.routes.get("/civitai_gallery/collections")
+async def get_collections(request):
+    return await _favorites_response(request, gallery_library.collections, request.query.get("favoriteId"), request.query.get("nsfw", "None"))
+
+
+@prompt_server.routes.get("/civitai_gallery/searches")
+async def get_saved_searches(request):
+    return await _favorites_response(request, gallery_library.saved_searches)
+
+
+@prompt_server.routes.post("/civitai_gallery/collections")
+@prompt_server.routes.post("/civitai_gallery/searches")
+async def edit_gallery_library(request):
+    if request.content_type != "application/json":
+        return web.json_response({"error": "Expected JSON."}, status=415)
+    try:
+        data = await request.json()
+    except (ValueError, UnicodeError):
+        return web.json_response({"error": "Invalid JSON."}, status=400)
+    edit = gallery_library.edit_collection if request.path.endswith("/collections") else gallery_library.edit_search
+    return await _favorites_response(request, edit, data, write=True)
+
+
+@prompt_server.routes.get("/civitai_gallery/storage")
+@prompt_server.routes.post("/civitai_gallery/storage")
+async def favorites_location(request):
+    if comfy_args.multi_user or not favorite_storage.local_request(request):
+        message = ("ComfyUI manages a private favorites folder for each profile." if comfy_args.multi_user
+                   else "Open ComfyUI on localhost to manage the favorites folder.")
+        return web.json_response({"error": message}, status=403)
+    try:
+        profile = _profile_database(request)
+        if request.method == "POST":
+            if request.content_type != "application/json":
+                return web.json_response({"error": "Expected JSON."}, status=415)
+            data = await request.json()
+            result = await asyncio.to_thread(favorite_storage.change_folder, profile,
+                                             data.get("folder") if isinstance(data, dict) else None)
+        elif "browse" in request.query:
+            result = await asyncio.to_thread(favorite_storage.list_folders, request.query["browse"])
+        else:
+            result = await asyncio.to_thread(favorite_storage.location_info)
+    except KeyError:
+        return web.json_response({"error": "Unknown ComfyUI profile."}, status=403)
+    except (ValueError, UnicodeError) as error:
+        return web.json_response({"error": str(error)}, status=400)
+    except (OSError, sqlite3.Error) as error:
+        logging.getLogger(__name__).warning("Favorites folder: %s", error)
+        return web.json_response({"error": "Cannot access this folder or database. Check the path and permissions."}, status=409)
+    return web.json_response(result, headers={"Cache-Control": "no-store"})
+
+
 @prompt_server.routes.get("/civitai_gallery/models")
 async def search_models(request):
     query = request.query.get("query", "").strip()
-    if not query:
+    model_type = request.query.get("modelType", "").strip()
+    base = request.query.get("baseModels", "").strip()
+    types = ["Checkpoint", "LORA"]
+    if model_type:
+        if model_type not in types:
+            return web.json_response({"error": "Choose Checkpoints or LoRAs."}, status=400)
+        types = [model_type]
+    if not (query or model_type or base):
         return web.json_response({"items": []})
-    params = {"query": query, "limit": "30", "types": ["Checkpoint", "LORA"]}
+    params = {"limit": "30", "types": types, "primaryFileOnly": "true"}
+    if query:
+        params["query"] = query
+    if base:
+        params["baseModels"] = base
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get("https://civitai.com/api/v1/models", params=params,
@@ -172,10 +247,25 @@ async def search_models(request):
         return web.json_response({"error": "Could not read Civitai model results."}, status=502)
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):
         return web.json_response({"error": "Invalid Civitai model results."}, status=502)
-    items = [{"id": item["id"], "name": item["name"], "type": item["type"]}
-             for item in data["items"] if isinstance(item, dict) and item.get("type") in ("Checkpoint", "LORA")
-             and type(item.get("id")) is int and isinstance(item.get("name"), str)]
-    return web.json_response({"items": items})
+    models_by_id = {}
+    for item in data["items"]:
+        if (not isinstance(item, dict) or item.get("type") not in types
+                or type(item.get("id")) is not int or not isinstance(item.get("name"), str)
+                or item["id"] in models_by_id):
+            continue
+        option = {key: item[key] for key in ("id", "name", "type")}
+        if isinstance(item.get("modelVersions"), list) and (versions := version_options(item)):
+            option["versions"] = versions
+        models_by_id[item["id"]] = option
+    result = {"items": list(models_by_id.values())}
+    metadata = data.get("metadata")
+    if isinstance(metadata, dict):
+        paging = {"hasMore": metadata.get("nextCursor") not in (None, "") or bool(metadata.get("nextPage"))}
+        total = metadata.get("totalItems")
+        if type(total) is int and total >= len(data["items"]) and len(models_by_id) == len(data["items"]):
+            paging["totalItems"] = total
+        result["metadata"] = paging
+    return web.json_response(result)
 
 
 @prompt_server.routes.get("/civitai_gallery/images_stream")
@@ -189,10 +279,21 @@ async def get_civitai_images_stream(request):
         "flatMeta": "true",
         "withTags": "true",
     }
-    for key in ("username", "tags", "modelId", "modelVersionId"):
+    for key in ("username", "tags", "modelId", "modelVersionId", "baseModels"):
         value = query.get(key, "").strip()
         if value:
             params[key] = value
+
+    for key in ("imageId", "postId"):
+        if key in query:
+            if not catalog_id(query[key]):
+                return web.json_response({"error": "Invalid Civitai link ID."}, status=400)
+            params[key] = query[key]
+    ids = query["ids"].split(",") if "ids" in query else []
+    if ids:
+        if len(ids) > 100 or not all(catalog_id(value) for value in ids):
+            return web.json_response({"error": "Invalid saved image IDs."}, status=400)
+        params["ids"] = ",".join(ids)
 
     videos_only = truthy(query.get("videos_only", "false"))
     if videos_only:
@@ -200,50 +301,72 @@ async def get_civitai_images_stream(request):
     elif not truthy(query.get("include_videos", "false")):
         params["type"] = "image"
     hide_no_prompt = truthy(query.get("hide_no_prompt", "false"))
+    required_tags = set(filter(None, params.get("tags", "").split(",")))
     search = query.get("query", "").strip()
 
     domain = "civitai.com" if truthy(query.get("international_version", "true")) else "civitai.work"
     url = f"https://{domain}/api/v1/images"
     batch = clamp_int(query.get("min_batch"), 1, 500, 50)
+    if ids or "imageId" in params:
+        batch = len(ids) or 1
     budget_ms = clamp_int(query.get("time_budget_ms"), 0, 15000, 10000) or 10000
     started = time.monotonic()
     deadline = started + budget_ms / 1000
     cursor = query.get("cursor") or None
+    shuffle = params["sort"] == "Random"
+    # Civitai's model-only gallery can reject Random outside a collection.
+    sampled = shuffle and bool(cursor and cursor.startswith("sample/"))
+    if sampled:
+        params["sort"] = "Newest"
+        cursor = cursor.removeprefix("sample/")
     seen_cursors = {cursor}
     kept = []
     dropped = 0
+    received_page = False
 
     try:
         async with aiohttp.ClientSession() as session:
-            for page in range(50):
+            for _ in range(50):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    if page:
+                    if received_page:
                         break
                     raise TimeoutError
-                params["limit"] = str(min(200, batch - len(kept)))
+                params["limit"] = str(min(200, 2 * batch if shuffle else batch - len(kept)))
                 if cursor:
                     params["cursor"] = cursor
                 timeout = aiohttp.ClientTimeout(total=remaining, ceil_threshold=float("inf"))
                 try:
                     async with session.get(url, params=params, timeout=timeout) as response:
                         if response.status != 200:
+                            if response.status == 400 and shuffle and not sampled:
+                                params["sort"] = "Newest"
+                                params.pop("cursor", None)
+                                cursor = None
+                                seen_cursors.clear()
+                                sampled = True
+                                continue
                             retry_after = response.headers.get("Retry-After")
                             headers = {"Retry-After": retry_after} if retry_after else {}
                             status = response.status if 400 <= response.status <= 599 else 502
                             return web.json_response({"error": f"Civitai returned HTTP {response.status}."}, status=status, headers=headers)
                         data = await response.json(content_type=None)
                 except TimeoutError:
-                    if page:
+                    if received_page:
                         break
                     raise
 
                 if not isinstance(data, dict) or not isinstance(data.get("items"), list) or not isinstance(data.get("metadata"), dict):
                     return web.json_response({"error": "Invalid gallery response from Civitai."}, status=502)
+                received_page = True
                 for item in data["items"]:
                     if (
                         not isinstance(item, dict)
                         or item.get("type") == "audio"
+                        or ("imageId" in params and str(item.get("id")) != params["imageId"])
+                        or ("postId" in params and str(item.get("postId")) != params["postId"])
+                        or (ids and str(item.get("id")) not in ids)
+                        or (len(required_tags) > 1 and not required_tags.issubset(civitai_tag_ids(item)))
                         or ("type" in params and item_is_video(item) != videos_only)
                         or (hide_no_prompt and not positive_prompt(generation_meta(item)))
                         or (search and not item_matches_query_local(item, search))
@@ -256,19 +379,24 @@ async def get_civitai_images_stream(request):
 
                 metadata = data["metadata"]
                 cursor = metadata.get("nextCursor") or metadata.get("cursor") or metadata.get("next") or None
-                if cursor is None:
+                if cursor is None or ids or "imageId" in params:
+                    cursor = None
                     break
                 if not isinstance(cursor, (str, int)) or str(cursor) in seen_cursors:
                     return web.json_response({"error": "Civitai returned an invalid or repeated page cursor."}, status=502)
                 cursor = str(cursor)
                 seen_cursors.add(cursor)
-                if len(kept) >= batch or (hide_no_prompt and kept):
+                if len(kept) >= batch or ((hide_no_prompt or shuffle) and kept):
                     break
     except TimeoutError:
         return web.json_response({"error": "Civitai did not respond in time."}, status=504)
     except (aiohttp.ClientError, ValueError):
         return web.json_response({"error": "Could not read the gallery response from Civitai."}, status=502)
 
+    if shuffle:
+        kept = random.sample(kept, min(len(kept), batch))
+        if cursor and sampled:
+            cursor = "sample/" + cursor
     return web.json_response({
         "items": kept,
         "metadata": {
@@ -277,6 +405,7 @@ async def get_civitai_images_stream(request):
             "served": len(kept),
             "droppedByFilters": dropped,
             "hasMore": cursor is not None,
+            "sampled": sampled,
             "nsfw": params["nsfw"],
             "sort": params["sort"],
             "period": params["period"],
@@ -285,6 +414,38 @@ async def get_civitai_images_stream(request):
             "timeBudgetMs": budget_ms,
         },
     })
+
+
+_preview_slots = asyncio.Semaphore(4)
+
+
+@prompt_server.routes.post("/civitai_gallery/preview")
+async def get_gallery_preview(request):
+    """Serve a raster preview when the CDN does not allow a browser to read it cross-origin."""
+    if request.content_type != "application/json":
+        return web.json_response({"error": "Expected JSON."}, status=415)
+    try:
+        data = await request.json()
+    except ValueError:
+        return web.json_response({"error": "Invalid JSON."}, status=400)
+    url = data.get("url") if isinstance(data, dict) else None
+    async with _preview_slots:
+        if request.transport is None or request.transport.is_closing():
+            return web.Response(status=204)
+        try:
+            stream, mime, policy, age = await asyncio.to_thread(media.download_preview, url)
+        except ValueError as error:
+            return web.json_response({"error": str(error)}, status=400)
+        except OSError as error:
+            return web.json_response({"error": "Could not load the Civitai preview."},
+                                     status=error.code if isinstance(error, HTTPError) else 502)
+        with stream:
+            response = web.StreamResponse(headers={"Content-Type": mime, "Cache-Control": "no-store",
+                "X-Civitai-Cache-Control": policy, "Age": age, "X-Content-Type-Options": "nosniff"})
+            await response.prepare(request)
+            while chunk := await asyncio.to_thread(stream.read, 256 * 1024):
+                await response.write(chunk)
+            return response
 
 
 @prompt_server.routes.post("/civitai_gallery/check_video_workflow")

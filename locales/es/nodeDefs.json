@@ -1,0 +1,49 @@
+{
+  "CivitaiDiscoveryHubNode": {
+    "inputs": {
+      "selection_data": {
+        "name": "Selección",
+        "tooltip": "Datos JSON del elemento seleccionado y sus opciones."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Prompt positivo"
+      },
+      "1": {
+        "name": "Prompt negativo"
+      },
+      "2": {
+        "name": "Imagen"
+      },
+      "3": {
+        "name": "Información"
+      }
+    }
+  },
+  "ClearLoraName": {
+    "display_name": "🧹 Limpiar etiquetas LoRA",
+    "inputs": {
+      "enabled": {
+        "name": "Limpieza activada",
+        "tooltip": "Activa la eliminación de etiquetas LoRA. Si se desactiva, ambos prompts conservan sus etiquetas."
+      },
+      "positive_prompt": {
+        "name": "Prompt positivo",
+        "tooltip": "Prompt positivo opcional del que se eliminan las etiquetas LoRA."
+      },
+      "negative_prompt": {
+        "name": "Prompt negativo",
+        "tooltip": "Prompt negativo opcional del que se eliminan las etiquetas LoRA."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Prompt positivo"
+      },
+      "1": {
+        "name": "Prompt negativo"
+      }
+    }
+  }
+}

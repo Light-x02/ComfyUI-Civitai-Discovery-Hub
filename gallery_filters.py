@@ -43,6 +43,22 @@ def positive_prompt(meta):
     return ""
 
 
+def civitai_tag_ids(item):
+    tags = set()
+    for field in ("tags", "tagIds", "civitaiTagIds"):
+        values = item.get(field)
+        if not isinstance(values, list):
+            continue
+        for tag in values:
+            # Historical "tags" strings are personal labels, including numeric ones.
+            if field == "tags" and isinstance(tag, str):
+                continue
+            value = tag.get("id") if isinstance(tag, dict) else tag
+            if isinstance(value, (int, str)) and str(value).isdecimal():
+                tags.add(str(value))
+    return tags
+
+
 def item_matches_query_local(it: Dict[str, Any], q: str) -> bool:
     if not q:
         return True

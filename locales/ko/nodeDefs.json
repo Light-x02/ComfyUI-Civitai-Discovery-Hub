@@ -1,0 +1,49 @@
+{
+  "CivitaiDiscoveryHubNode": {
+    "inputs": {
+      "selection_data": {
+        "name": "선택 항목",
+        "tooltip": "선택한 미디어와 옵션을 담은 JSON 데이터입니다."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "긍정 프롬프트"
+      },
+      "1": {
+        "name": "부정 프롬프트"
+      },
+      "2": {
+        "name": "이미지"
+      },
+      "3": {
+        "name": "정보"
+      }
+    }
+  },
+  "ClearLoraName": {
+    "display_name": "🧹 LoRA 태그 정리",
+    "inputs": {
+      "enabled": {
+        "name": "정리 켜짐",
+        "tooltip": "켜면 LoRA 태그를 제거합니다. 끄면 두 프롬프트 모두 원래 태그를 유지합니다."
+      },
+      "positive_prompt": {
+        "name": "긍정 프롬프트",
+        "tooltip": "LoRA 태그를 제거할 긍정 프롬프트입니다. 연결은 선택 사항입니다."
+      },
+      "negative_prompt": {
+        "name": "부정 프롬프트",
+        "tooltip": "LoRA 태그를 제거할 부정 프롬프트입니다. 연결은 선택 사항입니다."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "긍정 프롬프트"
+      },
+      "1": {
+        "name": "부정 프롬프트"
+      }
+    }
+  }
+}

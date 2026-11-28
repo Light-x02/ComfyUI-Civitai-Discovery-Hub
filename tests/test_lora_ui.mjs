@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import { createHubWidgetRoot } from "../js/gallery-view.js";
+import { galleryLabels, hubLanguage, loadHubLanguage } from "../js/hub-i18n.js";
 
 const source = readFileSync(new URL("../js/ClearLoraName.js", import.meta.url), "utf8")
     .replace(/^import .*;$/gm, "");
@@ -37,7 +38,7 @@ function createNode(document = createDocument()) {
         }
     }
     const app = { canvas: {}, registerExtension(ext) { ext.beforeRegisterNodeDef(Node, { name: "ClearLoraName" }); } };
-    vm.runInNewContext(source, { app, document, createHubWidgetRoot });
+    vm.runInNewContext(source, { app, document, createHubWidgetRoot, galleryLabels, hubLanguage, loadHubLanguage });
     const node = new Node();
     node.onNodeCreated();
     return { button, node, summary };
@@ -102,4 +103,27 @@ test("the classic overlay follows the current node width after resize and workfl
     widget.options.onDraw(widget);
     assert.equal(widget.width, 420);
     assert.equal(node.root.style["--cln-canvas-width"], "400px");
+});
+
+test("the cleaner uses the ComfyUI locale for both states and the explanation", async () => {
+    for (const [language, on, off, summaryOff] of [
+        ["fr", "Nettoyage activé", "Nettoyage désactivé", "Les deux prompts conservent"],
+        ["es", "Limpieza activada", "Limpieza desactivada", "Ambos prompts conservan"],
+        ["zh", "清理已开启", "清理已关闭", "两个提示词都保留"],
+        ["zh-TW", "清理已開啟", "清理已關閉", "兩組提示詞都會保留"],
+        ["ja", "除去オン", "除去オフ", "両方のプロンプト"],
+        ["ko", "정리 켜짐", "정리 꺼짐", "두 프롬프트 모두"],
+    ]) {
+        const document = createDocument();
+        document.documentElement = { lang: language };
+        document.defaultView = { fetch: async url => Response.json(JSON.parse(readFileSync(url, "utf8"))) };
+        await loadHubLanguage({}, document);
+        const { button, node, summary } = createNode(document);
+        assert.equal(button.textContent, on);
+        assert.equal(node.root.lang, language);
+        assert.ok(!node.root.innerHTML.includes("Remove LoRA tags"));
+        button.dispatchEvent(new Event("click"));
+        assert.equal(button.textContent, off);
+        assert.ok(summary.textContent.startsWith(summaryOff));
+    }
 });

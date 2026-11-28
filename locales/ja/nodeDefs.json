@@ -1,0 +1,49 @@
+{
+  "CivitaiDiscoveryHubNode": {
+    "inputs": {
+      "selection_data": {
+        "name": "選択内容",
+        "tooltip": "選択したメディアとそのオプションを記録した JSON データです。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "ポジティブプロンプト"
+      },
+      "1": {
+        "name": "ネガティブプロンプト"
+      },
+      "2": {
+        "name": "画像"
+      },
+      "3": {
+        "name": "情報"
+      }
+    }
+  },
+  "ClearLoraName": {
+    "display_name": "🧹 LoRA タグの除去",
+    "inputs": {
+      "enabled": {
+        "name": "除去オン",
+        "tooltip": "有効にすると LoRA タグを取り除きます。無効のときは両方のプロンプトにタグを残します。"
+      },
+      "positive_prompt": {
+        "name": "ポジティブプロンプト",
+        "tooltip": "任意のポジティブプロンプトです。LoRA タグが取り除かれます。"
+      },
+      "negative_prompt": {
+        "name": "ネガティブプロンプト",
+        "tooltip": "任意のネガティブプロンプトです。LoRA タグが取り除かれます。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "ポジティブプロンプト"
+      },
+      "1": {
+        "name": "ネガティブプロンプト"
+      }
+    }
+  }
+}

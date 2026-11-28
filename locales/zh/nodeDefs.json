@@ -1,0 +1,49 @@
+{
+  "CivitaiDiscoveryHubNode": {
+    "inputs": {
+      "selection_data": {
+        "name": "所选内容",
+        "tooltip": "所选媒体及其选项的 JSON 数据。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "正向提示词"
+      },
+      "1": {
+        "name": "负向提示词"
+      },
+      "2": {
+        "name": "图片"
+      },
+      "3": {
+        "name": "信息"
+      }
+    }
+  },
+  "ClearLoraName": {
+    "display_name": "🧹 清理 LoRA 标签",
+    "inputs": {
+      "enabled": {
+        "name": "清理已开启",
+        "tooltip": "开启后将移除 LoRA 标签。关闭后两个提示词均保留原有标签。"
+      },
+      "positive_prompt": {
+        "name": "正向提示词",
+        "tooltip": "可选的正向提示词，其中的 LoRA 标签将被移除。"
+      },
+      "negative_prompt": {
+        "name": "负向提示词",
+        "tooltip": "可选的负向提示词，其中的 LoRA 标签将被移除。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "正向提示词"
+      },
+      "1": {
+        "name": "负向提示词"
+      }
+    }
+  }
+}

@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import closing, contextmanager
 from pathlib import Path
 
-from .gallery_filters import clamp_int, generation_meta, item_is_video, positive_prompt, truthy
+from .gallery_filters import civitai_tag_ids, clamp_int, generation_meta, item_is_video, positive_prompt, truthy
 
 
 PROFILE_DATABASE = "civitai-discovery-hub/favorites.sqlite3"
@@ -38,21 +38,10 @@ def _favorite_row(item_id, item):
         value = stats.get(key)
         return value if isinstance(value, int) and 0 <= value < 2**60 else 0
     reactions = sum(count(key) for key in ("likeCount", "heartCount", "laughCount", "cryCount", "dislikeCount"))
-    tags = set()
-    for field in ("tags", "tagIds", "civitaiTagIds"):
-        values = item.get(field)
-        if isinstance(values, list):
-            for tag in values:
-                # Historical "tags" strings are personal labels, including numeric ones.
-                if field == "tags" and isinstance(tag, str):
-                    continue
-                tag = tag.get("id") if isinstance(tag, dict) else tag
-                if isinstance(tag, (int, str)) and str(tag).isdecimal():
-                    tags.add(str(tag))
     return (item_id, json.dumps(item, ensure_ascii=False, separators=(",", ":")),
             str(username or "").casefold(), level, item_is_video(item), bool(positive_prompt(generation_meta(item))),
             item.get("createdAt") if isinstance(item.get("createdAt"), str) else None,
-            reactions, count("commentCount"), json.dumps(sorted(tags)))
+            reactions, count("commentCount"), json.dumps(sorted(civitai_tag_ids(item))))
 
 
 def _store_favorite(db, item_id, item):
@@ -67,7 +56,7 @@ def _store_favorite(db, item_id, item):
 
 
 def _initialize_favorites(db, legacy):
-    if db.execute("PRAGMA user_version").fetchone()[0] == 2:
+    if db.execute("PRAGMA user_version").fetchone()[0] == 4:
         return
     db.execute("BEGIN IMMEDIATE")
     version = db.execute("PRAGMA user_version").fetchone()[0]
@@ -93,11 +82,21 @@ def _initialize_favorites(db, legacy):
             has_prompt = bool(positive_prompt(generation_meta(json.loads(data))))
             if has_prompt != old_prompt:
                 db.execute("UPDATE favorite SET prompt=? WHERE rowid=?", (has_prompt, rowid))
-    elif version != 2:
+    elif version not in (2, 3, 4):
         raise ValueError("Unsupported favorites database version")
     if version < 2:
         db.execute(f"CREATE INDEX favorite_created ON favorite ({_CREATED_DATE})")
-        db.execute("PRAGMA user_version=2")
+    if version < 3:
+        db.execute("CREATE TABLE favorite_collection (key TEXT PRIMARY KEY, name TEXT NOT NULL)")
+        db.execute("""CREATE TABLE collection_item (
+            collection_key TEXT NOT NULL REFERENCES favorite_collection(key) ON DELETE CASCADE,
+            favorite_id TEXT NOT NULL REFERENCES favorite(id) ON DELETE CASCADE,
+            PRIMARY KEY (collection_key, favorite_id)) WITHOUT ROWID""")
+        db.execute("CREATE INDEX collection_item_favorite ON collection_item (favorite_id)")
+        db.execute("CREATE TABLE saved_search (key TEXT PRIMARY KEY, name TEXT NOT NULL, settings TEXT NOT NULL)")
+    if version < 4:
+        db.execute("ALTER TABLE favorite_collection ADD COLUMN cover_id TEXT REFERENCES favorite(id) ON DELETE SET NULL")
+        db.execute("PRAGMA user_version=4")
     db.commit()
 
 
@@ -112,6 +111,7 @@ class FavoriteNotFound(LookupError):
 @contextmanager
 def open_database(path, *, import_legacy, write):
     with closing(sqlite3.connect(path)) as db, db:
+        db.execute("PRAGMA foreign_keys=ON")
         _initialize_favorites(db, LEGACY_FILE if import_legacy else None)
         db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
         yield db
@@ -123,6 +123,10 @@ def all_items(db):
 
 def ids(db):
     return {"ids": [key for (key,) in db.execute("SELECT id FROM favorite")]}
+
+
+def rating_ceiling(value):
+    return _FAVORITE_MAX_LEVEL.get(value, 1)
 
 
 def _favorite_id(value):
@@ -180,9 +184,12 @@ def page(db, query):
     offset = clamp_int(query.get("offset", (page - 1) * limit), 0, 2**31-1, 0)
     conditions = []
     values = []
+    if collection := query.get("collection", "").strip():
+        conditions.append("id IN (SELECT favorite_id FROM collection_item WHERE collection_key=?)")
+        values.append(collection.casefold())
     if "nsfw" in query:
         conditions.append("level <= ?")
-        values.append(_FAVORITE_MAX_LEVEL.get(query["nsfw"], 1))
+        values.append(rating_ceiling(query["nsfw"]))
     if "videos_only" in query:
         conditions.append("video = ?")
         values.append(truthy(query["videos_only"]))
@@ -191,6 +198,12 @@ def page(db, query):
     if username := query.get("username", "").strip():
         conditions.append("author = ?")
         values.append(username.casefold())
+    if base := query.get("baseModels"):
+        conditions.append("coalesce(json_extract(data, '$.baseModel'), json_extract(data, '$.meta.baseModel')) = ?")
+        values.append(base)
+    if ids := query.get("ids"):
+        conditions.append("id IN (SELECT value FROM json_each(?))")
+        values.append(json.dumps(ids.split(",")))
     if days := _FAVORITE_PERIODS.get(query.get("period")):
         conditions.append(f"{_CREATED_DATE} >= julianday('now') - ?")
         values.append(days)
@@ -199,7 +212,8 @@ def page(db, query):
         values.append(tag)
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
-    order = {"Newest": f"{_CREATED_DATE} DESC, rowid DESC", "Most Reactions": "reactions DESC, rowid DESC",
+    order = {"Newest": f"{_CREATED_DATE} DESC, rowid DESC", "Oldest": f"{_CREATED_DATE} ASC NULLS LAST, rowid",
+             "Random": "random()", "Most Reactions": "reactions DESC, rowid DESC",
              "Most Comments": "comments DESC, rowid DESC"}.get(query.get("sort"), "rowid")
     total = db.execute("SELECT COUNT(*) FROM favorite" + where, values).fetchone()[0]
     rows = db.execute("SELECT data FROM favorite" + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",

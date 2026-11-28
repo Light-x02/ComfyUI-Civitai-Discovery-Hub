@@ -17,6 +17,7 @@ package = module("cdh_test_package", __path__=[str(Path(__file__).resolve().pare
 server = SimpleNamespace(routes=web.RouteTableDef(), user_manager=None)
 standins = {
     package.__name__: package,
+    "folder_paths": module("folder_paths", get_system_user_directory=lambda name: None),
     "server": module("server", PromptServer=SimpleNamespace(instance=server)),
     "comfy": module("comfy", __path__=[]),
     "comfy.cli_args": module("comfy.cli_args", args=SimpleNamespace(multi_user=False)),
